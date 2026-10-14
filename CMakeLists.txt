@@ -217,6 +217,32 @@ if(BUILD_TESTING)
     target_include_directories(recomp-runtime-ui-test PRIVATE src)
     add_test(NAME recomp-runtime-ui COMMAND $<TARGET_FILE:recomp-runtime-ui-test>)
 
+    # psxrecomp in-game menu provider (src/consoles/psx/psx_menu_provider.cpp)
+    # against a fake host. Needs the psxrecomp runtime include dir for
+    # psx_menu_host.h (the contract is psxrecomp's): -DRECOMP_UI_PSXRECOMP_ROOT=
+    # <psxrecomp checkout>, or a psxrecomp checkout next to this repo.
+    set(RECOMP_UI_PSXRECOMP_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../psxrecomp"
+        CACHE PATH "psxrecomp checkout for the PSX menu provider test")
+    if(EXISTS "${RECOMP_UI_PSXRECOMP_ROOT}/runtime/include/psx_menu_host.h")
+        add_executable(recomp-ui-psx-menu-provider-test
+            tests/psx_menu_provider_test.cpp
+            src/consoles/psx/psx_menu_provider.cpp
+            src/common/recomp_runtime_ui.c
+            src/common/recomp_runtime_settings.c
+            "${RECOMP_UI_PSXRECOMP_ROOT}/runtime/src/host_overlay.c")
+        target_include_directories(recomp-ui-psx-menu-provider-test PRIVATE
+            src "${RECOMP_UI_PSXRECOMP_ROOT}/runtime/include")
+        set_target_properties(recomp-ui-psx-menu-provider-test PROPERTIES CXX_STANDARD 17)
+        if(WIN32)
+            target_link_libraries(recomp-ui-psx-menu-provider-test PRIVATE shell32)
+        endif()
+        add_test(NAME recomp-ui-psx-menu-provider
+                 COMMAND $<TARGET_FILE:recomp-ui-psx-menu-provider-test>)
+    else()
+        message(STATUS "recomp-ui: psx menu provider test skipped "
+                       "(no psxrecomp at RECOMP_UI_PSXRECOMP_ROOT)")
+    endif()
+
     # N64 controller page: the 3-column reading order the page is drawn from,
     # and the per-GUID gamepad store behind its bind chips.
     add_executable(recomp-ui-n64-pad-binds-test

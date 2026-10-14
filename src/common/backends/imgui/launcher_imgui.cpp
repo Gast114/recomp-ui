@@ -12102,6 +12102,9 @@ static void draw_mod_features(LauncherModel* m, const LauncherTheme& th) {
 
                     bool enabled = feature.enabled != 0;
                     if (ImGui::Checkbox("##enabled", &enabled)) {
+                        // Show settings when choosing a feature by checkbox,
+                        // just as when choosing its name.
+                        m->mod_selected = item.index;
                         if (!mods->feature_enable(
                                 mods->ctx, feature.package_id, feature.id,
                                 enabled ? 1 : 0)) {

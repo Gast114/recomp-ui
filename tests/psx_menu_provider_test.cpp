@@ -5,6 +5,7 @@
 // after-match edits never relaunch, disc insert through the host's tray,
 // netplay disc refusal, exits.
 #include "psx_menu_host.h"
+#include "recomp_launcher.h"
 #include "recomp_runtime_ui.h"
 #include "recomp_ui_psx_menu.h"
 #include "../src/consoles/psx/psx_menu_provider_internal.h"
@@ -44,6 +45,15 @@ static int h_disc_count(void) { return g_discs; }
 static int h_disc_mounted(void) { return g_mounted; }
 static const char *h_disc_path(int) { return "disc.cue"; }
 static int h_disc_insert(int n) { if (g_netplay) return 3; g_inserted = n; return 0; }
+// The host's texture-filter catalog (what psxrecomp hands every frontend).
+static const char *const kTf[] = {"Nearest", "Bilinear", "xBR"};
+static const int kTfv[] = {0, 1, 3};
+static int g_catalog = 1;
+static void h_game_info(RecompLauncherCGameInfo *gi) {
+#if defined(RECOMP_LAUNCHER_HAS_TEXTURE_FILTER_CATALOG)
+    if (g_catalog) { gi->texture_filter_labels = kTf; gi->texture_filter_values = kTfv; gi->num_texture_filters = 3; }
+#endif
+}
 
 static PsxMenuHost make_host(int default_selection) {
     PsxMenuHost h{};
@@ -53,6 +63,7 @@ static PsxMenuHost make_host(int default_selection) {
     h.mod_set = h_mod_set; h.reload_bindings = h_reload; h.request_exit = h_exit;
     h.disc_count = h_disc_count; h.disc_mounted = h_disc_mounted;
     h.disc_path = h_disc_path; h.disc_insert = h_disc_insert;
+    h.launcher_game_info = reinterpret_cast<void (*)(struct RecompLauncherCGameInfo *)>(h_game_info);
 #if defined(PSX_MENU_HOST_HAS_DEFAULT_SELECTION)
     h.default_selection = default_selection;
 #else
@@ -161,6 +172,18 @@ int main() {
     CHECK(g_paused == 1);
     p->detach(p->ctx);
     CHECK(g_paused == 0 && !p->is_open(p->ctx));
+
+    // A host without a texture-filter catalog: only Nearest/Bilinear is
+    // offered, so a value the frontends could not keep is never set.
+    g_catalog = 0; g_netplay = 0; g_exit = -1;
+    CHECK(p->attach(p->ctx, nullptr, nullptr, &host) == 1);
+    g_now.texture_filter = 0;
+    in(T);
+    CHECK(go("Graphics", "graphics.texture_filter"));
+    in(R); in(R); in(R);
+    CHECK(g_applied.texture_filter == 1);
+    in(T);
+    p->detach(p->ctx);
 
     if (!g_fail) std::printf("psx_menu_provider_test: ok\n");
     return g_fail ? 1 : 0;

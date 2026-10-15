@@ -397,6 +397,12 @@ void launcher_model_init(LauncherModel* m,
         m->has_supersampling    = game->has_supersampling != 0;
         m->has_antialiasing     = game->has_antialiasing != 0;
         m->has_texture_filter   = game->has_texture_filter != 0;
+        if (game->texture_filter_labels && game->texture_filter_values &&
+            game->num_texture_filters > 0) {
+            m->texture_filter_labels = game->texture_filter_labels;
+            m->texture_filter_values = game->texture_filter_values;
+            m->num_texture_filters = game->num_texture_filters;
+        }
         m->has_fmv_filter       = game->has_fmv_filter != 0;
         m->has_screen_kind      = game->has_screen_kind != 0;
         m->has_scanlines        = game->has_scanlines != 0;
@@ -843,7 +849,7 @@ void launcher_model_init(LauncherModel* m,
                      ? sk_prof->screen_kind_count : 4;
         m->s.screen_kind = clampi(m->s.screen_kind, 0, sk_n - 1);
     }
-    if (m->has_texture_filter) m->s.texture_filter = m->s.texture_filter ? 1 : 0;
+    if (m->has_texture_filter) m->s.texture_filter = launcher_model_normalize_texture_filter(m, m->s.texture_filter);
     /* 0 = unset (a host predating the field): seed the default rather than
      * letting a memset pin the least useful value. */
     if (m->has_fmv_filter) {
@@ -2096,11 +2102,33 @@ const char* launcher_model_aa_label(const LauncherModel* m) {
     }
 }
 
+/* Index of the current value in the host's texture-filter catalog, or -1. */
+static int texture_filter_index(const LauncherModel* m, int value) {
+    for (int i = 0; m->texture_filter_values && i < m->num_texture_filters; ++i)
+        if (m->texture_filter_values[i] == value) return i;
+    return -1;
+}
+
+int launcher_model_normalize_texture_filter(const LauncherModel* m, int value) {
+    if (m && m->num_texture_filters > 0)   /* host vocabulary: keep any value it offers */
+        return texture_filter_index(m, value) >= 0 ? value : m->texture_filter_values[0];
+    return value ? 1 : 0;                 /* legacy Nearest/Bilinear */
+}
+
 void launcher_model_toggle_texture_filter(LauncherModel* m) {
+    if (m->num_texture_filters > 0) {
+        const int i = texture_filter_index(m, m->s.texture_filter);
+        m->s.texture_filter = m->texture_filter_values[(i + 1) % m->num_texture_filters];
+        return;
+    }
     m->s.texture_filter = !m->s.texture_filter;
 }
 
 const char* launcher_model_texture_filter_label(const LauncherModel* m) {
+    if (m->num_texture_filters > 0 && m->texture_filter_labels) {
+        const int i = texture_filter_index(m, m->s.texture_filter);
+        return m->texture_filter_labels[i >= 0 ? i : 0];
+    }
     return m->s.texture_filter ? "Bilinear" : "Nearest";
 }
 

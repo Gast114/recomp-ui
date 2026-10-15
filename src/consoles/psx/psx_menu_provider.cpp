@@ -11,6 +11,7 @@
 
 #if defined(RUI_PSX_HAS_MENU_HOST)
 #include "psx_menu_host.h"
+#include "recomp_launcher.h"
 #include "recomp_ui_psx_menu.h"
 #include "psx_menu_provider_internal.h"
 #include "common/recomp_runtime_ui_internal.h"
@@ -31,13 +32,16 @@ int g_disc = 1;
 char g_status[160];
 char g_subtitle[96];
 
-const char *const kTextureFilters[] = {"Nearest", "Bilinear", "xBR"};
-const int kTextureFilterValues[] = {0, 1, 3};   // the runtime's PSX_TEXTURE_FILTER_*
+// Texture filtering offers the host's own vocabulary (the launcher game
+// info's texture_filter catalog, shared with the pre-game launcher), so every
+// frontend offers and keeps the same values. Without one: Nearest/Bilinear.
+const char *const kLegacyFilters[] = {"Nearest", "Bilinear"};
+const int kLegacyFilterValues[] = {0, 1};
 
 RecompRuntimeUiItem g_extra[] = {
     {"graphics.texture_filter", "Graphics", "Texture filtering",
      "Nearest, bilinear, or xBR sampling of game textures.",
-     RECOMP_RUNTIME_UI_CHOICE, 0, 3, 1, kTextureFilters, 3, kTextureFilterValues},
+     RECOMP_RUNTIME_UI_CHOICE, 0, 1, 1, kLegacyFilters, 2, kLegacyFilterValues},
     {"graphics.render_thread", "Graphics", "Render thread",
      "Use a second CPU thread; restarts when this menu closes.",
      RECOMP_RUNTIME_UI_BOOL, 0, 1, 1, nullptr, 0, nullptr},
@@ -172,6 +176,24 @@ int p_attach(void *, void *, void *, const PsxMenuHost *host) {
     if (g_ui) recomp_runtime_ui_destroy(g_ui);
     const int discs = disc_count();
     g_extra[2].maximum = discs > 1 ? discs : 1;
+    // The host's texture-filter catalog (attach runs on the main thread, where
+    // launcher_game_info may be called).
+    g_extra[0].choices = kLegacyFilters;
+    g_extra[0].choice_values = kLegacyFilterValues;
+    g_extra[0].choice_count = 2;
+#if defined(RECOMP_LAUNCHER_HAS_TEXTURE_FILTER_CATALOG)
+    if (host->launcher_game_info) {
+        RecompLauncherCGameInfo gi{};
+        host->launcher_game_info(&gi);
+        if (gi.texture_filter_labels && gi.texture_filter_values && gi.num_texture_filters > 0) {
+            g_extra[0].choices = gi.texture_filter_labels;
+            g_extra[0].choice_values = gi.texture_filter_values;
+            g_extra[0].choice_count = (size_t)gi.num_texture_filters;
+        }
+    }
+#endif
+    g_extra[0].minimum = 0;
+    g_extra[0].maximum = (int)g_extra[0].choice_count - 1;
     RecompRuntimeUiStandardConfig cfg{};
     cfg.menu.title = "Game menu";
     cfg.menu.subtitle = g_subtitle;

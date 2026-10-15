@@ -448,6 +448,9 @@ typedef struct {
     bool     has_supersampling;
     bool     has_antialiasing;
     bool     has_texture_filter;
+    const char* const* texture_filter_labels;   /* host catalog (game info), or NULL */
+    const int*         texture_filter_values;
+    int                num_texture_filters;
     bool     has_fmv_filter;
     bool     has_screen_kind;
     bool     has_scanlines;      // present-time scanline post-process (PSX)
@@ -931,7 +934,10 @@ const char* launcher_model_internal_resolution_note(const LauncherModel* m);
 void        launcher_model_apply_internal_resolution_settings(LauncherModel* m);
 void launcher_model_cycle_aa(LauncherModel* m);            // Off/2x/4x/8x (MSAA sample count)
 const char* launcher_model_aa_label(const LauncherModel* m);
-void launcher_model_toggle_texture_filter(LauncherModel* m);   // Nearest/Bilinear
+void launcher_model_toggle_texture_filter(LauncherModel* m);   // next value (host catalog, else Nearest/Bilinear)
+/* A Settings.texture_filter value the row can show: kept when the host's
+ * catalog offers it, else the catalog's first value (legacy hosts: 0/1). */
+int  launcher_model_normalize_texture_filter(const LauncherModel* m, int value);
 const char* launcher_model_texture_filter_label(const LauncherModel* m);
 // FMV reconstruction: Nearest/Bilinear/Sharp/Bicubic (wraps).
 void launcher_model_cycle_fmv_filter(LauncherModel* m);

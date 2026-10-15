@@ -3856,12 +3856,14 @@ void draw_shader_row(LauncherModel* m, const LauncherTheme& th, float col_w = 0.
 void draw_quality_preset_row(LauncherModel* m, const LauncherTheme& th) {
     if (!launcher_model_quality_offered(m)) return;
     launcher_model_quality_track(m);
-    row_label_right("Graphics preset", th, px(SETTINGS_CTRL_W));
     const int cur = m->s.quality_preset;
     const float gap = px(th.spacing_sm);
     const float btn_w = px(92);
     float combo_w = px(SETTINGS_CTRL_W) - btn_w - gap;
-    if (combo_w < px(90)) combo_w = px(90);
+    if (combo_w < px(110)) combo_w = px(110);
+    // Reserve both controls after enforcing the combo minimum. Otherwise
+    // Re-detect spills beyond the settings column's clip rectangle.
+    row_label_right("Graphics preset", th, combo_w + gap + btn_w);
     ImGui::SetNextItemWidth(combo_w);
     if (ImGui::BeginCombo("##quality_preset",
                           ui_text(cur ? launcher_model_quality_label(cur) : "Detected"))) {

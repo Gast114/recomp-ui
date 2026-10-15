@@ -39,7 +39,7 @@ RecompRuntimeUiItem g_extra[] = {
      "Nearest, bilinear, or xBR sampling of game textures.",
      RECOMP_RUNTIME_UI_CHOICE, 0, 3, 1, kTextureFilters, 3, kTextureFilterValues},
     {"graphics.render_thread", "Graphics", "Render thread",
-     "Draw on a second CPU thread. Applies with a quick restart when you close the menu.",
+     "Use a second CPU thread; restarts when this menu closes.",
      RECOMP_RUNTIME_UI_BOOL, 0, 1, 1, nullptr, 0, nullptr},
     {"media.disc", "Disc", "Selected disc", "Choose a disc, then Insert disc and resume.",
      RECOMP_RUNTIME_UI_INT, 1, 1, 1, nullptr, 0, nullptr},

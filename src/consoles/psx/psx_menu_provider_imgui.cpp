@@ -127,8 +127,10 @@ void draw(int w, int h) {
     // Keyboard/controller driven: no mouse position, so hover never moves the
     // model's selection under the player.
     io.AddMousePosEvent(-FLT_MAX, -FLT_MAX);
-    const uint64_t now = SDL_GetTicksNS();
-    io.DeltaTime = g_last_ns && now > g_last_ns ? (float)((now - g_last_ns) / 1e9) : 1.0f / 60.0f;
+    const uint64_t now = SDL_GetPerformanceCounter();
+    const uint64_t frequency = SDL_GetPerformanceFrequency();
+    io.DeltaTime = g_last_ns && now > g_last_ns && frequency
+        ? (float)((double)(now - g_last_ns) / (double)frequency) : 1.0f / 60.0f;
     g_last_ns = now;
     ImGui_ImplOpenGL3_NewFrame();
     ImGui::NewFrame();

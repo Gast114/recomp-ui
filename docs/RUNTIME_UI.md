@@ -149,8 +149,9 @@ reports and sends edits back to it, so recomp-ui and any other provider behave
 the same.
 
 - Rows: Display > Fullscreen; Graphics > Linear filter, FMV filtering, Texture
-  filtering (Nearest, Bilinear, xBR: the runtime's own enum, not the boolean
-  standard row), Render thread (restart-only: a quick relaunch when the menu
+  filtering (the host's catalog, `RecompLauncherCGameInfo.texture_filter_*`,
+  which the pre-game launcher uses too -- psxrecomp: Nearest, Bilinear, xBR;
+  Nearest/Bilinear when a host has none), Render thread (restart-only: a quick relaunch when the menu
   closes); System > Resume, Pause in menu, Return to launcher, Quit; Disc >
   Selected disc, Insert disc and resume (multi-disc titles, through the
   runtime's tray policy).

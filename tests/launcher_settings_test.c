@@ -18,7 +18,7 @@
 #include <unistd.h>
 #endif
 
-static int window_available = 1, edit = 0;
+static int window_available = 1, edit = 0, toggle_tf = 0;
 static LngAction action = LNG_ACTION_QUIT;
 static RecompLauncherCSettings observed;
 static int opened_width, opened_height, resized_width, resized_height;
@@ -46,6 +46,7 @@ LngAction launcher_backend_run(LauncherPlatform* p, LauncherModel* m,
         p->logical_h = resized_height;
     }
     observed = m->s;
+    if (toggle_tf) launcher_model_toggle_texture_filter(m);
     if (edit) {
         launcher_model_set_fullscreen(m, edit);
         launcher_model_set_scale(m, 4);
@@ -249,6 +250,44 @@ int main(int argc, char** argv) {
     run(&game, &s);
     read_text("launcher-window.ini", result, sizeof(result));
     require(!strcmp(result, "logical_width=1200\nlogical_height=900\n"), "unavailable window never overwrites geometry");
+    window_available = 1;
+
+    /* Texture filtering across the frontend boundary: a host value from its
+     * catalog (PSX xBR = 3) survives the launcher's startup / soft-return
+     * path unchanged, the row cycles the host's values, and a host without a
+     * catalog keeps the legacy Nearest/Bilinear coercion. */
+    {
+        RecompLauncherCGameInfo psx = {0};
+        launcher_profile_apply("psx", &psx);
+        psx.config_path = "psx settings.ini";
+        psx.has_texture_filter = 1;
+        static const char* const tf_labels[] = {"Nearest", "Bilinear", "xBR"};
+        static const int tf_values[] = {0, 1, 3};
+        psx.texture_filter_labels = tf_labels;
+        psx.texture_filter_values = tf_values;
+        psx.num_texture_filters = 3;
+        RecompLauncherCSettings t = defaults();
+        t.texture_filter = 3;
+        action = LNG_ACTION_LAUNCH; edit = 0; toggle_tf = 0;
+        run(&psx, &t);
+        require(observed.texture_filter == 3 && t.texture_filter == 3,
+                "xBR (3) survives the launcher: 3 -> return -> still 3");
+        toggle_tf = 1;
+        run(&psx, &t);
+        require(t.texture_filter == 0, "the row cycles the host's values (3 -> 0)");
+        run(&psx, &t);
+        run(&psx, &t);
+        require(t.texture_filter == 3, "and back through 1 to 3");
+        toggle_tf = 0;
+        t.texture_filter = 2;   /* not offered by this host */
+        run(&psx, &t);
+        require(observed.texture_filter == 0, "a value the host does not offer becomes its first");
+        psx.texture_filter_labels = NULL; psx.texture_filter_values = NULL; psx.num_texture_filters = 0;
+        t.texture_filter = 3;
+        run(&psx, &t);
+        require(observed.texture_filter == 1, "a host without a catalog keeps Nearest/Bilinear");
+        action = LNG_ACTION_QUIT;
+    }
     puts("launcher settings persistence: PASS");
     return 0;
 }

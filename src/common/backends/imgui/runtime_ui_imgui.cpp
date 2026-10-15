@@ -450,7 +450,7 @@ extern "C" void recomp_runtime_ui_render_imgui(RecompRuntimeUi *ui) {
             ImGui::PushStyleColor(ImGuiCol_Text, col(theme.accent2));
             ImGui::TextUnformatted(ui->status);
             ImGui::PopStyleColor();
-            --ui->status_frames;
+            recomp_runtime_ui_advance_status(ui, ImGui::GetIO().DeltaTime * 60.0f);
         }
         ImGui::SameLine();
         const char *close_label = "Resume";

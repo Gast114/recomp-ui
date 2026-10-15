@@ -28,6 +28,7 @@ struct RecompRuntimeUi {
     size_t page_depth;
     size_t row_stack[RECOMP_RUNTIME_UI_MAX_DEPTH]; /* row to restore on Back */
     unsigned status_frames;
+    float status_frame_fraction;
     char status[48];
     RecompRuntimeUiItem *owned_items;
     const char **owned_view_choices;
@@ -54,6 +55,21 @@ struct RecompRuntimeUi {
     char toast_title[96];
     char toast_body[320];
 };
+
+/* Status lifetimes use nominal 60Hz frame units. ImGui redraws may be much
+ * faster while the guest is paused; retain the same human confirmation window. */
+static inline void recomp_runtime_ui_advance_status(RecompRuntimeUi *ui, float frames) {
+    if (!ui->status_frames || !(frames > 0.0f)) return;
+    const float elapsed = ui->status_frame_fraction + frames;
+    if (elapsed >= (float)ui->status_frames) {
+        ui->status_frames = 0;
+        ui->status_frame_fraction = 0.0f;
+    } else {
+        const unsigned whole = (unsigned)elapsed;
+        ui->status_frames -= whole;
+        ui->status_frame_fraction = elapsed - (float)whole;
+    }
+}
 
 int recomp_runtime_ui_item_enabled(const RecompRuntimeUi *ui,
                                    const RecompRuntimeUiItem *item);

@@ -213,9 +213,45 @@ void nested_mouse_case() {
     recomp_runtime_ui_destroy(ui);
 }
 
+// A paused host can redraw much faster than the guest. Confirmation remains
+// usable after a human double-press delay, and still expires after three seconds.
+void confirmation_cadence_case() {
+    static const RecompRuntimeUiItem item = {
+        "quit", "System", "Quit", nullptr, RECOMP_RUNTIME_UI_ACTION,
+        0, 0, 0, nullptr, 0, nullptr };
+    RecompRuntimeUiConfig config{};
+    config.items = &item;
+    config.item_count = 1;
+    RecompRuntimeUi *ui = recomp_runtime_ui_create(&config);
+    recomp_runtime_ui_open(ui);
+    ImGui::CreateContext();
+    ImGuiIO &io = ImGui::GetIO();
+    io.IniFilename = nullptr;
+    io.DisplaySize = ImVec2(1280, 720);
+    unsigned char *pixels; int width, height;
+    io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
+    auto render = [&](int count, float dt) {
+        io.DeltaTime = dt;
+        for (int i = 0; i < count; ++i) {
+            ImGui::NewFrame();
+            recomp_runtime_ui_render_imgui(ui);
+            ImGui::Render();
+        }
+    };
+    assert(!recomp_runtime_ui_confirm(ui, &item, "Press again to quit"));
+    render(240, 0.001f);
+    assert(recomp_runtime_ui_confirm(ui, &item, "Press again to quit"));
+    assert(!recomp_runtime_ui_confirm(ui, &item, "Press again to quit"));
+    render(31, 0.1f);
+    assert(!recomp_runtime_ui_confirm(ui, &item, "Press again to quit"));
+    ImGui::DestroyContext();
+    recomp_runtime_ui_destroy(ui);
+}
+
 } // namespace
 
 int main() {
+    confirmation_cadence_case();
     nested_mouse_case();
     toast_case();
     render_case(0, ImVec2(1280.0f, 720.0f), 779.0f, 671.0f, 781.0f);

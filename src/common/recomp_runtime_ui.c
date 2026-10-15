@@ -41,6 +41,7 @@ const RecompRuntimeUiItem *recomp_runtime_ui_section_item(
 static void show_status(RecompRuntimeUi *ui, const char *text, unsigned frames) {
     snprintf(ui->status, sizeof(ui->status), "%s", text);
     ui->status_frames = ui->status[0] ? frames : 0;
+    ui->status_frame_fraction = 0.0f;
     ui->confirm_item = NULL;
 }
 

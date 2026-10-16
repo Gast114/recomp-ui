@@ -4533,19 +4533,45 @@ void draw_audio_controls(LauncherModel* m, const LauncherTheme& th) {
                 ImGui::EndTooltip();
             }
         }
-        const float bw = px(78);
-        ImGui::SameLine(0, px(14));
-        float avail = ImGui::GetContentRegionAvail().x - bw - px(th.spacing_sm);
-        if (avail < px(50)) avail = px(50);
-        const char* dir = m->s.msu1_dir[0] ? m->s.msu1_dir : "(not set)";
-        char elided[192]; elide_left(dir, avail, elided, sizeof(elided));
-        ImGui::AlignTextToFramePadding();
-        ImGui::TextColored(col(th.text_muted), "%s", elided);
-        ImGui::SameLine(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - bw);
-        if (ImGui::Button(ui_text("Browse"), ImVec2(bw, px(30)))) {  // px(30) matches the other settings buttons + the row's frame height (px(28) sat the label high)
-            ui_pick_folder(m, "Select MSU-1 music folder", [m](const char* path) {
-                if (path) launcher_model_set_msu1_dir(m, path);
-            });
+        if (!m->msu1_managed && m->num_msu1_packs > 0) {
+            const char* selected = "Custom...";
+            for (int i = 0; i < m->num_msu1_packs; ++i)
+                if (!std::strcmp(m->s.msu1_pack, m->msu1_packs[i].id)) selected = m->msu1_packs[i].name;
+            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+            if (ImGui::BeginCombo("##msu_soundtrack", selected)) {
+                for (int i = 0; i < m->num_msu1_packs; ++i) {
+                    const auto& pack = m->msu1_packs[i];
+                    if (ImGui::Selectable(pack.name, !std::strcmp(m->s.msu1_pack, pack.id)))
+                        launcher_model_set_msu1_pack(m, pack.id);
+                }
+                if (ImGui::Selectable("Custom...", !m->s.msu1_pack[0])) {
+                    launcher_model_set_msu1_pack(m, "");
+                    ui_pick_file(m, "Select MSU-1 music file", {"*.msu"}, "MSU-1 music", [m](const char* path) {
+                        if (path) launcher_model_set_msu1_dir(m, path);
+                    });
+                }
+                ImGui::EndCombo();
+            }
+        }
+        if (!m->msu1_managed && (!m->num_msu1_packs || !m->s.msu1_pack[0])) {
+            const float bw = px(78);
+            if (!m->num_msu1_packs) ImGui::SameLine(0, px(14));
+            float avail = ImGui::GetContentRegionAvail().x - bw - px(th.spacing_sm);
+            if (avail < px(50)) avail = px(50);
+            const char* dir = m->s.msu1_dir[0] ? m->s.msu1_dir : "(not set)";
+            char elided[192]; elide_left(dir, avail, elided, sizeof(elided));
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextColored(col(th.text_muted), "%s", elided);
+            ImGui::SameLine(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - bw);
+            if (ImGui::Button(ui_text("Browse"), ImVec2(bw, px(30)))) {  // px(30) matches the other settings buttons + the row's frame height (px(28) sat the label high)
+                auto selected_path = [m](const char* path) {
+                    if (path) launcher_model_set_msu1_dir(m, path);
+                };
+                if (m->num_msu1_packs > 0)
+                    ui_pick_file(m, "Select MSU-1 music file", {"*.msu"}, "MSU-1 music", selected_path);
+                else
+                    ui_pick_folder(m, "Select MSU-1 music folder", selected_path);
+            }
         }
     }
 
@@ -4564,7 +4590,7 @@ void draw_audio_controls(LauncherModel* m, const LauncherTheme& th) {
 // panel_video_draw, decided from the same "deep" predicate draw_settings used
 // to compute inline.
 void panel_audio_draw(LauncherModel* m, const LauncherTheme* th) {
-    const bool deep_audio = m->has_spu_hq || m->num_languages > 0 || m->num_audio_devices > 0;   /* deadzone moved to controller card */
+    const bool deep_audio = m->num_msu1_packs > 0 || m->has_spu_hq || m->num_languages > 0 || m->num_audio_devices > 0;   /* deadzone moved to controller card */
     if (deep_audio || !g_settings_two_col) {
         if (begin_panel("audio", 0, false)) draw_audio_controls(m, *th);
         end_panel();
@@ -5038,7 +5064,7 @@ void draw_settings(LauncherModel* m, const LauncherTheme& th) {
     g_settings_two_col = two_col;   // read by panel_video_draw/panel_audio_draw
 
     const bool deep_display = video_card_grows(m);   // superset of any_deep_display: folds in NES + widescreen (N64 covered too)
-    const bool deep_audio   = m->has_spu_hq || m->num_languages > 0 || m->num_audio_devices > 0;   /* deadzone moved to controller card */
+    const bool deep_audio   = m->num_msu1_packs > 0 || m->has_spu_hq || m->num_languages > 0 || m->num_audio_devices > 0;   /* deadzone moved to controller card */
 
     const LauncherPanel* video_p   = find_composed(prof->panels_settings, "video", m);
     const LauncherPanel* audio_p   = find_composed(prof->panels_settings, "audio", m);
@@ -11504,31 +11530,33 @@ static void draw_mod_packages(LauncherModel* m, const LauncherTheme& th) {
         mods->feature_option_get && mods->feature_enable &&
         mods->feature_set_option;
 
-    const char* archive_extension =
-        mods->archive_extension && mods->archive_extension[0]
-            ? mods->archive_extension : ".psxmod";
-    const char* archive_description =
-        mods->archive_description && mods->archive_description[0]
-            ? mods->archive_description
-            : "PSXRecomp mod package (.psxmod)";
-    char install_label[96];
-    char archive_pattern[64];
-    std::snprintf(install_label, sizeof(install_label),
-                  "%s %s", ui_text("Install"), archive_extension);
-    std::snprintf(archive_pattern, sizeof(archive_pattern),
-                  "*%s", archive_extension);
-    if (ImGui::Button(install_label)) {
-        ui_pick_file(m, ui_text("Install Mod Package"), {archive_pattern},
-                     archive_description, [m, mods](const char* path) {
-            if (!path) return;
-            if (!mods->install_archive || !mods->install_archive(mods->ctx, path))
-                mod_note_error(m);
-            else
-                std::snprintf(m->mod_status, sizeof(m->mod_status),
-                              "Package installed. Changes apply when you press PLAY.");
-        });
+    if (mods->install_archive) {
+        const char* archive_extension =
+            mods->archive_extension && mods->archive_extension[0]
+                ? mods->archive_extension : ".psxmod";
+        const char* archive_description =
+            mods->archive_description && mods->archive_description[0]
+                ? mods->archive_description
+                : "PSXRecomp mod package (.psxmod)";
+        char install_label[96];
+        char archive_pattern[64];
+        std::snprintf(install_label, sizeof(install_label),
+                      "%s %s", ui_text("Install"), archive_extension);
+        std::snprintf(archive_pattern, sizeof(archive_pattern),
+                      "*%s", archive_extension);
+        if (ImGui::Button(install_label)) {
+            ui_pick_file(m, ui_text("Install Mod Package"), {archive_pattern},
+                         archive_description, [m, mods](const char* path) {
+                if (!path) return;
+                if (!mods->install_archive || !mods->install_archive(mods->ctx, path))
+                    mod_note_error(m);
+                else
+                    std::snprintf(m->mod_status, sizeof(m->mod_status),
+                                  "Package installed. Changes apply when you press PLAY.");
+            });
+        }
+        ImGui::SameLine();
     }
-    ImGui::SameLine();
     ImGui::SetNextItemWidth(px(300));
     ImGui::InputTextWithHint("##mod_search", "Search mods and options...",
                              m->mod_search, sizeof(m->mod_search));
@@ -11989,31 +12017,34 @@ static void draw_mod_features(LauncherModel* m, const LauncherTheme& th) {
     }
 
     const int feature_count = mods->feature_count(mods->ctx);
-    const char* archive_extension =
-        mods->archive_extension && mods->archive_extension[0]
-            ? mods->archive_extension : ".psxmod";
-    const char* archive_description =
-        mods->archive_description && mods->archive_description[0]
-            ? mods->archive_description
-            : "PSXRecomp mod package (.psxmod)";
-    char install_label[96];
-    char archive_pattern[64];
-    std::snprintf(install_label, sizeof(install_label),
-                  "Install %s", archive_extension);
-    std::snprintf(archive_pattern, sizeof(archive_pattern),
-                  "*%s", archive_extension);
-    if (ImGui::Button(install_label)) {
-        ui_pick_file(m, "Install Mod Package", {archive_pattern},
-                     archive_description, [m, mods](const char* path) {
-            if (!path) return;
-            if (!mods->install_archive ||
-                !mods->install_archive(mods->ctx, path)) {
-                mod_note_error(m);
-            } else {
-                std::snprintf(m->mod_status, sizeof(m->mod_status),
-                              "%s", ui_text("Package installed. Changes apply when you press PLAY."));
-            }
-        });
+    if (mods->install_archive) {
+        const char* archive_extension =
+            mods->archive_extension && mods->archive_extension[0]
+                ? mods->archive_extension : ".psxmod";
+        const char* archive_description =
+            mods->archive_description && mods->archive_description[0]
+                ? mods->archive_description
+                : "PSXRecomp mod package (.psxmod)";
+        char install_label[96];
+        char archive_pattern[64];
+        std::snprintf(install_label, sizeof(install_label),
+                      "Install %s", archive_extension);
+        std::snprintf(archive_pattern, sizeof(archive_pattern),
+                      "*%s", archive_extension);
+        if (ImGui::Button(install_label)) {
+            ui_pick_file(m, "Install Mod Package", {archive_pattern},
+                         archive_description, [m, mods](const char* path) {
+                if (!path) return;
+                if (!mods->install_archive ||
+                    !mods->install_archive(mods->ctx, path)) {
+                    mod_note_error(m);
+                } else {
+                    std::snprintf(m->mod_status, sizeof(m->mod_status),
+                                  "%s", ui_text("Package installed. Changes apply when you press PLAY."));
+                }
+            });
+        }
+        ImGui::SameLine();
     }
     /* No "Enable all": in a title with many mods it turns on features that
      * need owner files or conflict with each other, all at once. */
@@ -12384,6 +12415,34 @@ static void draw_rom_patch(LauncherModel* m, const LauncherTheme& th) {
     ImGui::EndChild();
 }
 
+static void draw_mod_presets(LauncherModel* m, const LauncherTheme& th) {
+    const int count = launcher_model_preset_count(m);
+    if (!count) return;
+    const char* current = m->mods->preset_current(m->mods->ctx, &m->s);
+    RecompLauncherCModPreset selected{};
+    std::snprintf(selected.name, sizeof(selected.name), "%s", "Custom");
+    for (int i = 0; i < count; ++i) {
+        RecompLauncherCModPreset item{};
+        if (m->mods->preset_get(m->mods->ctx, i, &item) && current && !std::strcmp(current, item.id)) selected = item;
+    }
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Preset");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(px(280));
+    if (ImGui::BeginCombo("##mod_preset", selected.name)) {
+        for (int i = 0; i < count; ++i) {
+            RecompLauncherCModPreset item{};
+            if (!m->mods->preset_get(m->mods->ctx, i, &item)) continue;
+            if (ImGui::Selectable(item.name, current && !std::strcmp(current, item.id)))
+                launcher_model_apply_preset(m, item.id);
+            if (ImGui::IsItemHovered() && item.description[0]) ImGui::SetTooltip("%s", item.description);
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::TextColored(col(th.text_muted), "Individual options remain editable.");
+    ImGui::Spacing();
+}
+
 void draw_mods(LauncherModel* m, const LauncherTheme& th) {
     const auto* mods = m ? m->mods : nullptr;
     if (!m || (!mods && !m->rom_patch_supported)) return;
@@ -12395,6 +12454,7 @@ void draw_mods(LauncherModel* m, const LauncherTheme& th) {
     /* Above the Features/Packages switch: a package that failed to parse is
      * missing from BOTH views, so reporting it inside either one would leave
      * the other silent. */
+    draw_mod_presets(m, th);
     draw_mod_catalog_diagnostics(m, th);
 
     const bool feature_provider =
@@ -12416,6 +12476,305 @@ void draw_mods(LauncherModel* m, const LauncherTheme& th) {
         draw_mod_packages(m, th);
     else
         draw_mod_features(m, th);
+}
+
+/* Formats and installed data belong to the game. The picker only selects a
+ * source; the host's asynchronous importer validates it and reports whether
+ * conversion is possible. The title is collected before any files are written. */
+static void content_pick(LauncherModel* m,
+                         const RecompLauncherCCustomContentType& type) {
+    PickRequest request;
+    request.mode = type.directory ? PickMode::Folder : PickMode::OpenFile;
+    request.title = type.directory ? "Import custom content folder"
+                                   : "Import custom content";
+    request.description = type.file_description;
+    std::string patterns = type.file_patterns;
+    while (!patterns.empty()) {
+        const size_t comma = patterns.find(',');
+        std::string pattern = patterns.substr(0, comma);
+        const size_t first = pattern.find_first_not_of(" \t");
+        const size_t last = pattern.find_last_not_of(" \t");
+        if (first != std::string::npos)
+            request.patterns.push_back(pattern.substr(first, last - first + 1));
+        if (comma == std::string::npos) break;
+        patterns.erase(0, comma + 1);
+    }
+    const std::string type_id = type.id;
+    const bool directory = type.directory != 0;
+    request.on_pick = [m, type_id, directory](const char* source) {
+        if (!source || !source[0]) return;
+        if (std::strlen(source) >= sizeof(m->content_pending_source)) {
+            std::snprintf(m->content_error, sizeof(m->content_error), "%s",
+                          "The selected path is too long to import.");
+            return;
+        }
+        std::snprintf(m->content_pending_type, sizeof(m->content_pending_type),
+                      "%s", type_id.c_str());
+        std::snprintf(m->content_pending_source, sizeof(m->content_pending_source),
+                      "%s", source);
+        std::filesystem::path path(source);
+        if (path.filename().empty()) path = path.parent_path();
+        std::string name = (directory ? path.filename() : path.stem()).string();
+        if (name.empty()) name = "Custom content";
+        std::snprintf(m->content_pending_name, sizeof(m->content_pending_name),
+                      "%s", name.c_str());
+        m->content_error[0] = '\0';
+        m->content_import_open = true;
+    };
+    ui_pick(m, std::move(request));
+}
+
+static void draw_content_import_modal(LauncherModel* m, const LauncherTheme& th) {
+    if (!launcher_model_custom_content_available(m)) return;
+    if (m->content_import_open) ImGui::OpenPopup("Import custom content");
+    ImGui::SetNextWindowSize(ImVec2(px(520), 0), ImGuiCond_Always);
+    if (!ImGui::BeginPopupModal("Import custom content", &m->content_import_open,
+                                ImGuiWindowFlags_AlwaysAutoResize)) return;
+    ImGui::TextUnformatted(ui_text("Content name"));
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+    ImGui::InputText("##content_name", m->content_pending_name,
+                      sizeof(m->content_pending_name));
+    ImGui::Spacing();
+    ImGui::PushStyleColor(ImGuiCol_Text, col(th.text_muted));
+    ImGui::TextWrapped("%s", m->content_pending_source);
+    ImGui::PopStyleColor();
+    ImGui::Spacing();
+    ImGui::TextWrapped("%s", ui_text("This content will be checked before anything is installed."));
+    ImGui::Spacing();
+    ImGui::BeginDisabled(launcher_model_custom_content_busy(m) ||
+                          !m->content_pending_name[0]);
+    if (ImGui::Button(ui_text("Import"), ImVec2(px(120), px(34)))) {
+        if (launcher_model_custom_content_import(
+                m, m->content_pending_type, m->content_pending_source,
+                m->content_pending_name)) {
+            m->content_import_open = false;
+            ImGui::CloseCurrentPopup();
+        }
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::Button(ui_text("Cancel"), ImVec2(px(120), px(34)))) {
+        m->content_import_open = false;
+        ImGui::CloseCurrentPopup();
+    }
+    if (m->content_error[0]) {
+        ImGui::PushStyleColor(ImGuiCol_Text, col(th.warn));
+        ImGui::TextWrapped("%s", m->content_error);
+        ImGui::PopStyleColor();
+    }
+    ImGui::EndPopup();
+}
+
+static void draw_content_review(LauncherModel* m, const LauncherTheme& th) {
+    if (m->content_status.state != RECOMP_CONTENT_NEEDS_INPUT ||
+        !launcher_model_custom_content_review_available(m)) return;
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+    ImGui::TextColored(col(th.accent2), "%s", ui_text("Review your courses"));
+    ImGui::TextWrapped("%s", ui_text("Check the details below, then import your courses."));
+    ImGui::Spacing();
+    const auto* content = m->custom_content;
+    for (int i = 0; i < m->content_review_count; ++i) {
+        const auto& field = m->content_review_fields[i];
+        auto& edit = m->content_review_values[i];
+        ImGui::PushID(field.id);
+        if (field.type == RECOMP_CONTENT_FIELD_CHOICE) {
+            const float width = std::min(ImGui::GetContentRegionAvail().x, px(620));
+            ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(0, px(2)));
+            const bool row = ImGui::BeginTable("##review_choice_row", 2,
+                ImGuiTableFlags_NoSavedSettings, ImVec2(width, 0));
+            if (!row) {
+                ImGui::PopStyleVar();
+                ImGui::PopID();
+                continue;
+            }
+            if (row) {
+                ImGui::TableSetupColumn("##label", ImGuiTableColumnFlags_WidthFixed,
+                                        std::min(px(240), width * 0.45f));
+                ImGui::TableSetupColumn("##choice", ImGuiTableColumnFlags_WidthStretch);
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::AlignTextToFramePadding();
+                ImGui::TextWrapped("%s", field.label[0] ? field.label : field.id);
+                ImGui::TableSetColumnIndex(1);
+                ImGui::SetNextItemWidth(-1);
+            }
+            char preview[256];
+            std::snprintf(preview, sizeof(preview), "%s", edit.value);
+            for (int n = 0; n < field.option_count; ++n) {
+                RecompLauncherCCustomContentOption option{};
+                if (content->review_option_get(content->ctx, field.id, n, &option) &&
+                    !std::strcmp(option.value, edit.value)) {
+                    std::snprintf(preview, sizeof(preview), "%s",
+                                  option.label[0] ? option.label : option.value);
+                    break;
+                }
+            }
+            if (ImGui::BeginCombo("##review_choice", preview)) {
+                for (int n = 0; n < field.option_count; ++n) {
+                    RecompLauncherCCustomContentOption option{};
+                    if (!content->review_option_get(content->ctx, field.id, n, &option)) continue;
+                    const bool selected = !std::strcmp(option.value, edit.value);
+                    if (ImGui::Selectable(option.label[0] ? option.label : option.value, selected))
+                        std::snprintf(edit.value, sizeof(edit.value), "%s", option.value);
+                    if (selected) ImGui::SetItemDefaultFocus();
+                }
+                ImGui::EndCombo();
+            }
+            if (row) ImGui::EndTable();
+            ImGui::PopStyleVar();
+        } else {
+            ImGui::TextWrapped("%s", field.label[0] ? field.label : field.id);
+            ImGui::SetNextItemWidth(std::min(ImGui::GetContentRegionAvail().x, px(620)));
+            ImGui::InputText("##review_text", edit.value, sizeof(edit.value));
+        }
+        if (field.description[0]) {
+            ImGui::PushStyleColor(ImGuiCol_Text, col(th.text_muted));
+            ImGui::TextWrapped("%s", field.description);
+            ImGui::PopStyleColor();
+        }
+        if (field.type != RECOMP_CONTENT_FIELD_CHOICE || field.description[0])
+            ImGui::Spacing();
+        ImGui::PopID();
+    }
+    if (m->content_error[0]) {
+        ImGui::PushStyleColor(ImGuiCol_Text, col(th.warn));
+        ImGui::TextWrapped("%s", m->content_error);
+        ImGui::PopStyleColor();
+        ImGui::Spacing();
+    }
+    if (neon_cta("##review_import", ui_text("Import courses"),
+                  ImVec2(px(180), px(36)), m->content_review_initialized))
+        launcher_model_custom_content_review_submit(m);
+    ImGui::SameLine();
+    if (ImGui::Button(ui_text("Cancel"), ImVec2(px(120), px(36))))
+        launcher_model_custom_content_review_cancel(m);
+}
+
+void draw_custom_content(LauncherModel* m, const LauncherTheme& th) {
+    if (!launcher_model_custom_content_available(m)) return;
+    const auto* content = m->custom_content;
+    ImGui::TextColored(col(th.accent2), "%s", ui_text("Custom Content"));
+    if (content->description && content->description[0])
+        ImGui::TextWrapped("%s", content->description);
+    ImGui::Spacing();
+
+    RecompLauncherCCustomContentType file_type{}, folder_type{};
+    bool have_file = false, have_folder = false;
+    const bool can_import = content->import_start && content->import_status &&
+                             content->type_count && content->type_get;
+    const int type_count = can_import ? content->type_count(content->ctx) : 0;
+    for (int i = 0; i < type_count; ++i) {
+        RecompLauncherCCustomContentType type{};
+        if (!content->type_get(content->ctx, i, &type) || !type.id[0]) continue;
+        if (type.directory && !have_folder) { folder_type = type; have_folder = true; }
+        if (!type.directory && !have_file) { file_type = type; have_file = true; }
+    }
+    const bool busy = launcher_model_custom_content_busy(m);
+    ImGui::BeginDisabled(busy || m->content_import_open || g_picker.active);
+    if (have_file) {
+        if (ImGui::Button(ui_text("Import..."), ImVec2(px(140), px(34))))
+            content_pick(m, file_type);
+        if (ImGui::IsItemHovered() && file_type.description[0])
+            ImGui::SetTooltip("%s", file_type.description);
+    }
+    if (have_folder) {
+        if (have_file) ImGui::SameLine();
+        if (ImGui::Button(ui_text("Import folder..."), ImVec2(px(160), px(34))))
+            content_pick(m, folder_type);
+        if (ImGui::IsItemHovered() && folder_type.description[0])
+            ImGui::SetTooltip("%s", folder_type.description);
+    }
+    ImGui::EndDisabled();
+    if (content->open_folder) {
+        if (have_file || have_folder) ImGui::SameLine();
+        if (ImGui::Button(ui_text("Open folder"), ImVec2(px(140), px(34))))
+            launcher_model_custom_content_open_folder(m, "");
+    }
+    const auto& status = m->content_status;
+    if (status.state != RECOMP_CONTENT_IDLE) {
+        ImGui::Spacing();
+        const LngColor& tone = status.state == RECOMP_CONTENT_FAILED ? th.warn
+                             : status.state == RECOMP_CONTENT_SUCCEEDED ? th.good
+                                                                       : th.accent;
+        ImGui::PushStyleColor(ImGuiCol_Text, col(tone));
+        ImGui::TextWrapped("%s", status.message[0] ? status.message
+            : status.state == RECOMP_CONTENT_NEEDS_INPUT ? ui_text("A few details need your review.")
+            : busy ? ui_text("Importing custom content...")
+            : status.state == RECOMP_CONTENT_SUCCEEDED ? ui_text("Import complete.")
+                                                       : ui_text("Import failed."));
+        ImGui::PopStyleColor();
+        if (status.state == RECOMP_CONTENT_BUSY) {
+            char progress[32];
+            std::snprintf(progress, sizeof(progress), "%d%%", status.progress);
+            /* An unknown estimate is shown as working, never as 100%. */
+            if (status.progress < 0)
+                ImGui::ProgressBar(0, ImVec2(-1, px(22)), ui_text("Working..."));
+            else
+                ImGui::ProgressBar(status.progress / 100.0f, ImVec2(-1, px(22)), progress);
+        }
+        if (status.detail[0]) ImGui::TextWrapped("%s", status.detail);
+    }
+    draw_content_review(m, th);
+    if (m->content_error[0] &&
+        (status.state != RECOMP_CONTENT_NEEDS_INPUT ||
+         !launcher_model_custom_content_review_available(m))) {
+        ImGui::Spacing();
+        ImGui::PushStyleColor(ImGuiCol_Text, col(th.warn));
+        ImGui::TextWrapped("%s", m->content_error);
+        ImGui::PopStyleColor();
+    }
+    ImGui::Dummy(ImVec2(0, px(12)));
+    ImGui::Separator();
+    ImGui::Spacing();
+    ImGui::TextColored(col(th.accent2), "%s", ui_text("Installed content"));
+    ImGui::Spacing();
+    const int count = content->entry_count(content->ctx);
+    if (count <= 0) {
+        ImGui::TextColored(col(th.text_muted), "%s",
+                           ui_text("No custom content installed yet."));
+        return;
+    }
+    for (int i = 0; i < count; ++i) {
+        RecompLauncherCCustomContentEntry entry{};
+        if (!content->entry_get(content->ctx, i, &entry)) continue;
+        ImGui::PushID(entry.id);
+        ImGui::PushID(i);
+        ImGui::TextUnformatted(entry.name[0] ? entry.name : entry.id);
+        if (entry.kind[0]) {
+            ImGui::SameLine();
+            ImGui::TextColored(col(th.text_muted), "(%s)", entry.kind);
+        }
+        if (entry.description[0]) ImGui::TextWrapped("%s", entry.description);
+        if (entry.status[0]) {
+            ImGui::PushStyleColor(ImGuiCol_Text, col(entry.has_error ? th.warn : th.text_muted));
+            ImGui::TextWrapped("%s", entry.status);
+            ImGui::PopStyleColor();
+        }
+        if (content->open_folder && entry.id[0] &&
+            ImGui::SmallButton(ui_text("Open folder")))
+            launcher_model_custom_content_open_folder(m, entry.id);
+        if (entry.path[0] && ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", entry.path);
+        if (entry.notice[0]) {
+            ImGui::TextColored(col(th.warn), "%s%s", entry.notice,
+                               entry.notice_tooltip[0] ? " (?)" : "");
+            if (entry.notice_tooltip[0] && ImGui::IsItemHovered()) {
+                ImGui::BeginTooltip();
+                ImGui::PushTextWrapPos(ImGui::GetFontSize() * 32.0f);
+                ImGui::TextUnformatted(entry.notice_tooltip);
+                ImGui::PopTextWrapPos();
+                ImGui::EndTooltip();
+            }
+        }
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+        ImGui::PopID();
+        ImGui::PopID();
+    }
 }
 
 // ---- panel registry: id -> {view, slot, available, draw} --------------------
@@ -12758,7 +13117,7 @@ void draw_footer(LauncherModel* m, const LauncherTheme& th, float footer_h) {
     ImGui::SetCursorScreenPos(ImVec2(play_x, cta_y));
     const bool can_play = launcher_model_can_launch(m);
     const bool bios_block = launcher_model_bios_blocks_play(m);
-    const bool play_enabled = can_play || bios_block;
+    const bool play_enabled = (can_play || bios_block) && !launcher_model_custom_content_busy(m);
     if (neon_cta("##play", ui_text(m->in_session ? "RESUME" : "PLAY"),
                  ImVec2(play_w, play_h), play_enabled)) {
         /* Prefer mismatch prompt over launch even if can_play races true. */
@@ -12775,7 +13134,11 @@ void draw_footer(LauncherModel* m, const LauncherTheme& th, float footer_h) {
         }
     } else if (!play_enabled && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
         const char* noun = m->rom_noun ? m->rom_noun : "ROM";
-        if (m->bios_name && launcher_model_bios_missing(m)) {
+        if (launcher_model_custom_content_busy(m)) {
+            ImGui::SetTooltip("%s", m->content_status.state == RECOMP_CONTENT_NEEDS_INPUT
+                ? ui_text("Complete or cancel the content review first.")
+                : ui_text("Wait for the current import to finish."));
+        } else if (m->bios_name && launcher_model_bios_missing(m)) {
             ImGui::SetTooltip("Select the %s first", m->bios_name);
         } else if (m->has_bios && !m->setup_bios_ok) {
             ImGui::SetTooltip(
@@ -13970,6 +14333,7 @@ static void draw_launch_commit_progress(const LauncherTheme& th) {
 }
 
 void draw_ui(LauncherModel* m, const LauncherTheme& th, int logical_w, int logical_h) {
+    launcher_model_custom_content_poll(m);
     ImGuiViewport* vp = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(vp->Pos);
     ImGui::SetNextWindowSize(vp->Size);
@@ -14064,10 +14428,13 @@ void draw_ui(LauncherModel* m, const LauncherTheme& th, int logical_w, int logic
         const float y = hdr_top + px(6.0f);
         if (m->view == LNG_VIEW_DASHBOARD) {
             const int count = 1 + (m->mods ? 1 : 0) +
+                              (launcher_model_custom_content_available(m) ? 1 : 0) +
                               (m->has_assist_tools ? 1 : 0) +
                               ((m->credits_text && m->credits_text[0]) ? 1 : 0);
             const float w = px(110.0f);
-            const float total = w * count + gap * (count - 1);
+            const float content_w = px(155.0f);
+            const float total = w * count + gap * (count - 1) +
+                (launcher_model_custom_content_available(m) ? content_w - w : 0);
             ImGui::SetCursorPos(ImVec2(right - total, y));
             if (ImGui::Button(ui_text("Settings"), ImVec2(w, px(34))))
                 launcher_model_set_view(m, LNG_VIEW_SETTINGS);
@@ -14075,6 +14442,11 @@ void draw_ui(LauncherModel* m, const LauncherTheme& th, int logical_w, int logic
                 ImGui::SameLine(0, gap);
                 if (ImGui::Button(ui_text("Mods"), ImVec2(w, px(34))))
                     launcher_model_set_view(m, LNG_VIEW_MODS);
+            }
+            if (launcher_model_custom_content_available(m)) {
+                ImGui::SameLine(0, gap);
+                if (ImGui::Button(ui_text("Custom Content"), ImVec2(content_w, px(34))))
+                    launcher_model_set_view(m, LNG_VIEW_CUSTOM_CONTENT);
             }
             if (m->has_assist_tools) {
                 ImGui::SameLine(0, gap);
@@ -14160,6 +14532,7 @@ void draw_ui(LauncherModel* m, const LauncherTheme& th, int logical_w, int logic
         case LNG_VIEW_NETPLAY_MODE:   draw_netplay_mode_page(m, th);   break;
         case LNG_VIEW_NETPLAY_SIGNIN: draw_netplay_signin_page(m, th); break;
         case LNG_VIEW_MODS:       draw_mods(m, th);                 break;
+        case LNG_VIEW_CUSTOM_CONTENT: draw_custom_content(m, th);   break;
         case LNG_VIEW_ASSIST_TOOLS: draw_assist_tools(m, th);        break;
         case LNG_VIEW_CREDITS:      draw_credits(m, th);             break;
         case LNG_VIEW_LOBBY:        draw_lobby(m, th);               break;
@@ -14173,6 +14546,7 @@ void draw_ui(LauncherModel* m, const LauncherTheme& th, int logical_w, int logic
         ImGui::End();
         return;
     }
+    draw_content_import_modal(m, th);
     draw_setup_wizard_modal(m, th);
     draw_bios_confirm_modal(m, th);
     draw_bios_play_modal(m, th);

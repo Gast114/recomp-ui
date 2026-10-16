@@ -59,6 +59,8 @@ typedef enum {
      * skipped entirely when this client is already signed in or when the
      * server offers no logins -- see draw_netplay_mode_page. */
     LNG_VIEW_NETPLAY_SIGNIN,
+    /* Only offered when this game supplies its custom-content provider. */
+    LNG_VIEW_CUSTOM_CONTENT,
     /* Keep last. launcher_model_set_view validates against this rather than
      * against the last real view, which is what silently swallowed the two
      * views above when they were first added. */
@@ -165,6 +167,9 @@ typedef struct {
     bool        widescreen_supported;
     bool        msu1_supported;      // sram-like: show the MSU-1 module when true
     const char* msu1_note;           // borrowed; which patch, shown in the card
+    const RecompLauncherCMsuPack* msu1_packs;
+    int num_msu1_packs;
+    bool msu1_managed;              // host discovers music, no manual picker
     // ---- MSU-1 IPS auto-patching (dashboard "Patch ROM"/"Skip" flow) ----
     // Borrowed IPS file path; NULL => this game has no auto-patch (msu1_note-only
     // games still show the Settings->Audio MSU-1 toggle, just no dashboard prompt).
@@ -375,6 +380,17 @@ typedef struct {
     bool setup_wizard_supported;
     const RecompLauncherCNetplayCallbacks* netplay;
     const RecompLauncherCModProvider* mods;
+    const RecompLauncherCCustomContentProvider* custom_content;
+    char      content_pending_type[RECOMP_LAUNCHER_CONTENT_ID_MAX];
+    char      content_pending_source[RECOMP_LAUNCHER_CONTENT_PATH_MAX];
+    char      content_pending_name[128];
+    bool      content_import_open;
+    char      content_error[256];
+    RecompLauncherCCustomContentStatus content_status;
+    bool      content_review_initialized;
+    int       content_review_count;
+    RecompLauncherCCustomContentField content_review_fields[RECOMP_LAUNCHER_CONTENT_REVIEW_MAX_FIELDS];
+    RecompLauncherCCustomContentValue content_review_values[RECOMP_LAUNCHER_CONTENT_REVIEW_MAX_FIELDS];
     int       mod_selected;
     int       mod_package_selected;
     bool      mod_show_packages;
@@ -803,6 +819,19 @@ bool launcher_model_rom_verified(const LauncherModel* m);
 
 // ---- navigation ----
 void launcher_model_set_view(LauncherModel* m, LngView v);
+/* Cached host queries only. Imports are queued by the host, never executed
+ * by the view-model or render backend. A BUSY job prevents launch. */
+bool launcher_model_custom_content_available(const LauncherModel* m);
+bool launcher_model_custom_content_busy(const LauncherModel* m);
+bool launcher_model_custom_content_review_available(const LauncherModel* m);
+bool launcher_model_custom_content_review_submit(LauncherModel* m);
+bool launcher_model_custom_content_review_cancel(LauncherModel* m);
+void launcher_model_custom_content_poll(LauncherModel* m);
+bool launcher_model_custom_content_import(LauncherModel* m, const char* type_id,
+                                         const char* source_path,
+                                         const char* display_name);
+bool launcher_model_custom_content_open_folder(LauncherModel* m,
+                                              const char* entry_id);
 void launcher_model_open_config(LauncherModel* m, int player);  // -> Controller view
 void launcher_model_begin_camera_capture(LauncherModel* m, int action);
 void launcher_model_cancel_camera_capture(LauncherModel* m);
@@ -1082,7 +1111,11 @@ bool launcher_model_tpak_enabled(const LauncherModel* m, int slot);
 void launcher_model_set_audio_device(LauncherModel* m, const char* name);
 const char* launcher_model_audio_device_label(const LauncherModel* m);
 
+// ---- Optional host-defined presets ----
+int launcher_model_preset_count(const LauncherModel* m);
+int launcher_model_apply_preset(LauncherModel* m, const char* id);
 // ---- MSU-1 (only when msu1_supported) ----
+int launcher_model_set_msu1_pack(LauncherModel* m, const char* id);
 void launcher_model_toggle_msu1(LauncherModel* m);
 void launcher_model_set_msu1_dir(LauncherModel* m, const char* dir);
 

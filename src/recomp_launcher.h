@@ -1096,6 +1096,19 @@ typedef struct RecompLauncherCModResource {
     char format[64];
 } RecompLauncherCModResource;
 
+/* Optional host-defined settings recipes. IDs are stable; empty current ID
+ * means Custom. Apply only the settings owned by the recipe. */
+typedef struct RecompLauncherCModPreset {
+    char id[64];
+    char name[96];
+    char description[512];
+} RecompLauncherCModPreset;
+
+typedef struct RecompLauncherCMsuPack {
+    const char* id;
+    const char* name;
+} RecompLauncherCMsuPack;
+
 typedef struct RecompLauncherCModProvider {
     void* ctx;
     int (*package_count)(void* ctx);
@@ -1108,6 +1121,7 @@ typedef struct RecompLauncherCModProvider {
     int (*version_get)(void* ctx, const char* package_id, int index,
                        RecompLauncherCModVersion* out);
     /* Mutations return 1 on success and 0 on failure. */
+    /* Optional. NULL hides installation in both feature and package views. */
     int (*install_archive)(void* ctx, const char* archive_path);
     int (*remove_package)(void* ctx, const char* package_id, const char* version);
     int (*set_enabled)(void* ctx, const char* package_id, int enabled);
@@ -1207,9 +1221,136 @@ typedef struct RecompLauncherCModProvider {
      * Appended for statically paired source compatibility, not binary sizing. */
     int (*try_commit)(void* ctx, const char* image_path);
     unsigned long long (*preparation_revision)(void* ctx);
+    /* Opt-in: all four callbacks and a positive count are required to show
+     * the picker. Existing hosts get no presets or UI by default. Apply is
+     * transactional on failure; normal provider commit persists mod changes. */
+    int (*preset_count)(void* ctx);
+    int (*preset_get)(void* ctx, int index, RecompLauncherCModPreset* out);
+    const char* (*preset_current)(void* ctx, const RecompLauncherCSettings* settings);
+    int (*preset_apply)(void* ctx, const char* id, RecompLauncherCSettings* settings);
 } RecompLauncherCModProvider;
 #define RECOMP_LAUNCHER_HAS_WORKER_MOD_COMMIT 1
 #define RECOMP_LAUNCHER_HAS_PREPARED_MOD_COMMIT 1
+
+/* ---- opt-in custom content ----------------------------------------------
+ * Games own content formats, conversion, installation and paths. This surface
+ * presents their cached catalog and asynchronous importer; it is independent
+ * of the schema-driven Mods view and never assumes a package format. */
+#define RECOMP_LAUNCHER_HAS_CUSTOM_CONTENT 1
+#define RECOMP_LAUNCHER_CONTENT_ID_MAX 96
+#define RECOMP_LAUNCHER_CONTENT_PATH_MAX 1024
+#define RECOMP_LAUNCHER_HAS_CUSTOM_CONTENT_REVIEW 1
+#define RECOMP_LAUNCHER_CONTENT_REVIEW_MAX_FIELDS 256
+
+typedef struct RecompLauncherCCustomContentType {
+    char id[RECOMP_LAUNCHER_CONTENT_ID_MAX];
+    char label[128];
+    char description[512];
+    /* Comma-separated picker patterns, e.g. "*.json,*.zip". Advisory only:
+     * the host must validate selected input, including folder contents. */
+    char file_patterns[128];
+    char file_description[128];
+    int directory; /* 1 selects a folder; 0 selects a file. */
+} RecompLauncherCCustomContentType;
+
+typedef struct RecompLauncherCCustomContentEntry {
+    char id[RECOMP_LAUNCHER_CONTENT_ID_MAX];
+    char name[128];
+    char kind[96];
+    char description[512];
+    char path[RECOMP_LAUNCHER_CONTENT_PATH_MAX];
+    char status[256];
+    int has_error;
+    /* Optional informational notice; independent of a pack validation error. */
+    char notice[128];
+    char notice_tooltip[1024];
+} RecompLauncherCCustomContentEntry;
+
+typedef enum RecompLauncherCCustomContentState {
+    RECOMP_CONTENT_IDLE = 0,
+    RECOMP_CONTENT_BUSY = 1,
+    RECOMP_CONTENT_SUCCEEDED = 2,
+    RECOMP_CONTENT_FAILED = 3,
+    RECOMP_CONTENT_NEEDS_INPUT = 4,
+} RecompLauncherCCustomContentState;
+
+typedef struct RecompLauncherCCustomContentStatus {
+    int state; /* RecompLauncherCCustomContentState */
+    int progress; /* -1 indeterminate, otherwise 0..100. */
+    char message[256];
+    char detail[1024];
+} RecompLauncherCCustomContentStatus;
+
+typedef enum RecompLauncherCCustomContentFieldType {
+    RECOMP_CONTENT_FIELD_TEXT = 0,
+    RECOMP_CONTENT_FIELD_CHOICE = 1,
+} RecompLauncherCCustomContentFieldType;
+
+typedef struct RecompLauncherCCustomContentField {
+    char id[RECOMP_LAUNCHER_CONTENT_ID_MAX];
+    char label[128];
+    char description[512];
+    char value[256];
+    int type; /* RecompLauncherCCustomContentFieldType */
+    int option_count; /* CHOICE only; review_option_get copies each option. */
+} RecompLauncherCCustomContentField;
+
+typedef struct RecompLauncherCCustomContentOption {
+    char value[256];
+    char label[256];
+} RecompLauncherCCustomContentOption;
+
+typedef struct RecompLauncherCCustomContentValue {
+    char id[RECOMP_LAUNCHER_CONTENT_ID_MAX];
+    char value[256];
+} RecompLauncherCCustomContentValue;
+
+typedef struct RecompLauncherCCustomContentProvider {
+    void* ctx;
+    const char* description;
+    int (*type_count)(void* ctx);
+    int (*type_get)(void* ctx, int index, RecompLauncherCCustomContentType* out);
+    int (*entry_count)(void* ctx);
+    int (*entry_get)(void* ctx, int index, RecompLauncherCCustomContentEntry* out);
+    /* Return 1 once queued, 0 on rejection (last_error explains why).
+     * Called on the UI thread: copy arguments and start a host-owned worker;
+     * never parse, convert or copy content here. image_path is the launcher's
+     * selected base image, possibly empty, for host identity/conversion gates.
+     * display_name is the user's title only, never a destination path. The
+     * host validates it and uses an independent safe installation identifier.
+     * One job at a time; reject a second start while BUSY or NEEDS_INPUT. */
+    int (*import_start)(void* ctx, const char* type_id, const char* source_path,
+                        const char* image_path, const char* display_name);
+    /* Copy a cached, synchronized snapshot; return 1 on success. Queries and
+     * count/get above run on the UI thread and must remain cheap while a worker
+     * runs. Successful imports update the host's cached installed catalog.
+     * BUSY and NEEDS_INPUT prevent PLAY. Host keeps ctx alive and joins workers before
+     * destroying the provider, including when the launcher window is closed. */
+    int (*import_status)(void* ctx, RecompLauncherCCustomContentStatus* out);
+    /* Optional. Empty entry_id opens the content root; otherwise open the
+     * containing folder for that stable catalog id. Return 1 on success, 0
+     * with last_error on failure. The host owns platform/path decisions. */
+    int (*open_folder)(void* ctx, const char* entry_id);
+    const char* (*last_error)(void* ctx);
+    /* Optional interactive review. Count/get copy cached snapshots and stay
+     * cheap on the UI thread. Publish at most REVIEW_MAX_FIELDS fields before
+     * entering NEEDS_INPUT; keep their identities/schema stable until review
+     * exits. UI copies defaults once and preserves edits during polling and
+     * validation failures. This group is invisible when callbacks are NULL.
+     * CHOICE fields additionally require review_option_get. */
+    int (*review_field_count)(void* ctx);
+    int (*review_field_get)(void* ctx, int index, RecompLauncherCCustomContentField* out);
+    int (*review_option_get)(void* ctx, const char* field_id, int index,
+                             RecompLauncherCCustomContentOption* out);
+    /* Return 1 after copying values and queueing work (set BUSY before return).
+     * Return 0 on validation failure, retain NEEDS_INPUT, and explain through
+     * last_error. Never run conversion or installation on the UI thread. */
+    int (*review_submit)(void* ctx, const RecompLauncherCCustomContentValue* values,
+                         int count);
+    /* Return 1 after cancelling review (publish IDLE before return), 0 with
+     * last_error on failure. Closing the launcher still uses host lifecycle. */
+    int (*review_cancel)(void* ctx);
+} RecompLauncherCCustomContentProvider;
 
 // Plain-C mirror of the launcher's internal settings (bools as int).
 struct RecompLauncherCSettings {
@@ -1572,6 +1713,9 @@ struct RecompLauncherCSettings {
      * additively; a zero-initialized host reads as unset. */
     int  quality_preset;
     int  quality_base;
+    /* Host-defined bundled MSU pack ID; empty means the custom path above.
+     * Only used by hosts supplying GameInfo.msu1_packs. */
+    char msu1_pack[64];
 };
 #define RECOMP_LAUNCHER_HAS_ZAPPER_SETTINGS 1
 
@@ -2378,6 +2522,18 @@ typedef struct RecompLauncherCGameInfo {
     const char* const* texture_filter_labels;
     const int*         texture_filter_values;
     int                num_texture_filters;
+    /* Optional bundled soundtracks. NULL/0 retains the folder-only MSU UI.
+     * Hosts own defaults, persistence, paths and music adapters. Custom is
+     * appended by the UI and preserves Settings.msu1_dir when switching. */
+    const RecompLauncherCMsuPack* msu1_packs;
+    int num_msu1_packs;
+    /* Opt-in host-managed discovery: show only the enable checkbox and note.
+     * The host resolves installed music; no soundtrack or file picker is shown.
+     * Zero preserves the existing folder/custom soundtrack UI. */
+    int msu1_managed;
+    /* NULL hides Custom Content. Opt-in is per game, independent of Mods;
+     * all provider strings and ctx must outlive the launcher call. */
+    const RecompLauncherCCustomContentProvider* custom_content;
 } RecompLauncherCGameInfo;
 
 /* RecompLauncherCGameInfo carries texture_filter_labels / _values. */

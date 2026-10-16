@@ -214,14 +214,21 @@ static const char* kHotkeyKey[] = {
     "SolarBrighter", "SolarDimmer", "SolarLive",
     "Rewind", "SaveStateMenu", "OpenLauncher", "TurboToggle"
 };
+// Host-target overrides leave other games' defaults unchanged.
+#ifndef RECOMP_UI_DEFAULT_REWIND_KEY
+#define RECOMP_UI_DEFAULT_REWIND_KEY "F8"
+#endif
+#ifndef RECOMP_UI_DEFAULT_RENDERER_KEY
+#define RECOMP_UI_DEFAULT_RENDERER_KEY "R"
+#endif
 // Built-in defaults (shown when config.ini has no line; "" = unbound).
 static const char* kHotkeyDef[] = {
     "Alt+Return", "Ctrl+R", "Shift+P", "P", "Tab",
     /* WindowBigger/Smaller unbound; VolumeUp/Down default keypad +/-
      * (psxrecomp host_keymap reads these from [KeyMap]). */
-    "", "", "Keypad +", "Keypad -", "F", "R",
+    "", "", "Keypad +", "Keypad -", "F", RECOMP_UI_DEFAULT_RENDERER_KEY,
     "", "", "",
-    "F8", "F7", "Ctrl+L", "F9"
+    RECOMP_UI_DEFAULT_REWIND_KEY, "F7", "Ctrl+L", "F9"
 };
 /* Sized by their initializers, so a hotkey added to LngHotkey without a key
  * and a default here fails the build instead of reading a NULL. */

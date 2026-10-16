@@ -45,6 +45,13 @@ so behavior is identical across every game.
 
 ---
 
+## Optional experience presets
+
+Hosts may opt into a preset picker by supplying four mod-provider callbacks.
+No picker or default presets appear in games that omit them. Bundled MSU
+source choices are a separate optional capability; existing hosts retain the
+custom-folder UI. See [the API guide](docs/OPTIONAL_PRESETS.md).
+
 ## Consuming it
 
 ### 1. Vendor the repo (git submodule)
@@ -609,6 +616,51 @@ link the game target. The public provider ABI does not need
 `RecompLauncherCModProvider`. Only the target containing recomp-ui and the
 launcher call needs the generated frontend definition.
 
+## Opt-in Custom Content
+
+Set `GameInfo.custom_content` to a `RecompLauncherCCustomContentProvider` from
+[`src/recomp_launcher.h`](src/recomp_launcher.h) to offer a separate Custom
+Content page. Leave it `NULL` for games without this feature. This is independent
+of the Mods build option and does not prescribe manifests, file formats, or a
+filesystem layout.
+
+The page offers **Import...** using the first declared type with `directory=0`.
+Provide one file type whose `file_patterns` covers all supported inputs; the host
+detects the actual format. An optional first type with `directory=1` adds
+**Import folder...**. The picker collects a source and a user-editable title,
+then calls `import_start(ctx, type_id, source_path, image_path, display_name)`.
+The title is display metadata; the host generates and validates installation
+paths independently.
+
+`import_start` copies these arguments, queues a host worker, and returns promptly.
+Validation, conversion, and file copies run on that worker. `import_status` and
+catalog `count/get` calls copy synchronized cached snapshots; they must not scan
+folders or parse content on the render thread. The host publishes `BUSY` before
+returning success from `import_start`, then publishes success or failure and
+updates its installed catalog. Results should explain unsupported formats and
+any required conversion instead of reporting a successful import.
+
+PLAY is disabled while the job is `BUSY`. The host retains the provider and its
+context for the launcher call and joins workers before releasing them, including
+when the window is closed during an import. Optional `open_folder` receives an
+empty id for the content root or a catalog id for an entry's containing folder;
+the host owns opening the folder on its platform.
+
+An importer can request details before installation with `RECOMP_CONTENT_NEEDS_INPUT`
+and the optional review callbacks appended to the provider. `review_field_count`
+and `review_field_get` expose up to 256 fields with `TEXT` or `CHOICE` types;
+choices come from `review_option_get`. The launcher copies field defaults once
+on entering review and preserves edits while it polls status. Keep field ids and
+schema stable for that stage. Validation belongs in `review_submit`: return zero
+with `last_error` to keep the form and edits, or copy the values, publish `BUSY`,
+and queue work before returning one. `review_cancel` publishes `IDLE` before
+returning one. Import and PLAY stay disabled until review is submitted or
+cancelled, including when the player visits another launcher page.
+
+The standalone harness provides `LNG_DEMO_CONTENT_REVIEW=1` to preview a scrollable
+review form and validation without writing files. Pair it with
+`LNG_SCRIPT="wait:10;view:custom_content;wait:5;shot:review.png;quit"`.
+
 ## Build & self-test
 
 recomp-ui builds a standalone harness that fabricates the same C ABI a real host
@@ -623,7 +675,9 @@ LNG_VARIANT=genesis ./build/recomp-ui-launcher
 
 `LNG_SCRIPT` drives it headless for screenshot regression, e.g.
 `LNG_SCRIPT="wait:40;view:settings;shot:out.png;quit"` (see
-[`src/launcher_debug.h`](src/launcher_debug.h)).
+[`src/common/launcher_debug.h`](src/common/launcher_debug.h)). A host that opts
+into Custom Content can capture its page with
+`LNG_SCRIPT="wait:40;view:custom_content;wait:5;shot:content.png;quit"`.
 
 Requires SDL3 (`find_package(SDL3 CONFIG)`) by default, OpenGL, and a C++17
 compiler. Configure with `-DSNESRECOMP_SDL_BACKEND=SDL2` to exercise the

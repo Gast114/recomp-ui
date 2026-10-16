@@ -352,6 +352,34 @@ if(BUILD_TESTING)
         NAME recomp-ui-launcher-quality-preset
         COMMAND $<TARGET_FILE:recomp-ui-launcher-quality-preset-test>)
 
+    add_executable(recomp-ui-launcher-custom-content-test
+        tests/launcher_custom_content_test.c
+        src/common/crc32.c
+        src/common/sha1.c
+        src/common/sha256.c
+        src/common/ips_patch.c
+        src/consoles/psx/memcard_format.c)
+    target_include_directories(recomp-ui-launcher-custom-content-test PRIVATE
+        src src/common src/consoles/psx)
+    target_link_libraries(recomp-ui-launcher-custom-content-test PRIVATE ${RUI_SDL_TARGET})
+    add_test(
+        NAME recomp-ui-launcher-custom-content
+        COMMAND $<TARGET_FILE:recomp-ui-launcher-custom-content-test>)
+
+    add_executable(recomp-ui-launcher-presets-test
+        tests/launcher_presets_test.c
+        src/common/crc32.c
+        src/common/sha1.c
+        src/common/sha256.c
+        src/common/ips_patch.c
+        src/consoles/psx/memcard_format.c)
+    target_include_directories(recomp-ui-launcher-presets-test PRIVATE
+        src src/common src/consoles/psx)
+    target_link_libraries(recomp-ui-launcher-presets-test PRIVATE ${RUI_SDL_TARGET})
+    add_test(
+        NAME recomp-ui-launcher-presets
+        COMMAND $<TARGET_FILE:recomp-ui-launcher-presets-test>)
+
     # First-run wizard: staging a retail BIOS that has no linked backend.
     # Same include-the-TU shape as the discs test above.
     add_executable(recomp-ui-launcher-setup-bios-test

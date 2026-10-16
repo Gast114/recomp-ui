@@ -56,9 +56,10 @@ static const char* kHotkeyNames[] = {
 };
 typedef char kHotkeyNames_covers_every_hotkey[
     (sizeof(kHotkeyNames) / sizeof(kHotkeyNames[0]) == LNG_HK_COUNT) ? 1 : -1];
-static const char* kViewNames[8] = {
+static const char* kViewNames[LNG_VIEW__COUNT] = {
     "Dashboard", "Settings", "Controller", "Netplay", "Mods",
-    "Assist Tools", "Credits", "Lobby"
+    "Assist Tools", "Credits", "Lobby", "Netplay mode", "Sign in",
+    "Custom Content"
 };
 static const char* kSrcNames[3]  = { "None", "Keyboard", "Gamepad" };
 
@@ -360,7 +361,11 @@ void launcher_model_init(LauncherModel* m,
         m->platform             = game->platform;   // NULL => no subtitle
         m->widescreen_supported = game->widescreen_supported != 0;
         m->msu1_supported       = game->msu1_supported != 0;
+        m->msu1_managed         = game->msu1_managed != 0;
         m->msu1_note            = game->msu1_note;
+        m->msu1_packs           = game->msu1_packs;
+        m->num_msu1_packs       = game->msu1_packs && game->num_msu1_packs > 0
+                                      ? game->num_msu1_packs : 0;
         m->msu1_patch_path      = game->msu1_patch_path;
         m->saves_supported      = game->sram_path != NULL;
         m->sram_path            = game->sram_path;
@@ -582,6 +587,9 @@ void launcher_model_init(LauncherModel* m,
         m->netplay_view_labels = game->netplay_view_labels;
         m->num_netplay_view_labels = m->netplay_supported && game->netplay_view_labels
             ? clampi(game->num_netplay_view_labels, 0, 16) : 0;
+        m->custom_content       = game->custom_content;
+        m->content_status.progress = -1;
+        launcher_model_custom_content_poll(m);
         m->rom_patch_supported  = game->rom_patch_supported != 0;
         m->rom_patch_note       = game->rom_patch_note;
         m->rom_patch_cache_dir  = game->rom_patch_cache_dir;
@@ -1500,10 +1508,191 @@ void launcher_model_set_view(LauncherModel* m, LngView v) {
         m->netplay_policy_active = false;
         if (m->netplay_mode_changed) m->netplay_mode_changed(0);
     }
+    if (v == LNG_VIEW_CUSTOM_CONTENT &&
+        !launcher_model_custom_content_available(m)) return;
     /* Re-entering Netplay should rescan server + LAN lists. */
     if (m->view == LNG_VIEW_NETPLAY && v != LNG_VIEW_NETPLAY)
         m->netplay_list_fresh = false;
     m->view = v;
+}
+
+bool launcher_model_custom_content_available(const LauncherModel* m) {
+    return m && m->custom_content && m->custom_content->entry_count &&
+           m->custom_content->entry_get;
+}
+
+bool launcher_model_custom_content_busy(const LauncherModel* m) {
+    return m && m->custom_content &&
+           (m->content_status.state == RECOMP_CONTENT_BUSY ||
+            m->content_status.state == RECOMP_CONTENT_NEEDS_INPUT);
+}
+
+bool launcher_model_custom_content_review_available(const LauncherModel* m) {
+    const RecompLauncherCCustomContentProvider* p = m ? m->custom_content : NULL;
+    return p && p->review_field_count && p->review_field_get &&
+           p->review_submit && p->review_cancel;
+}
+
+static void content_note_error(LauncherModel* m, const char* fallback) {
+    const RecompLauncherCCustomContentProvider* p = m->custom_content;
+    const char* error = p && p->last_error ? p->last_error(p->ctx) : NULL;
+    safe_copy(m->content_error, sizeof(m->content_error),
+              error && error[0] ? error : fallback);
+}
+
+static void content_review_reset(LauncherModel* m) {
+    m->content_review_initialized = false;
+    m->content_review_count = 0;
+    memset(m->content_review_fields, 0, sizeof(m->content_review_fields));
+    memset(m->content_review_values, 0, sizeof(m->content_review_values));
+}
+
+static void content_review_load(LauncherModel* m) {
+    if (!launcher_model_custom_content_review_available(m)) return;
+    const RecompLauncherCCustomContentProvider* p = m->custom_content;
+    const int count = p->review_field_count(p->ctx);
+    if (count < 0 || count > RECOMP_LAUNCHER_CONTENT_REVIEW_MAX_FIELDS) {
+        safe_copy(m->content_error, sizeof(m->content_error),
+                  "Too many import details to review. Cancel and try again.");
+        return;
+    }
+    for (int i = 0; i < count; ++i) {
+        RecompLauncherCCustomContentField* f = &m->content_review_fields[i];
+        if (!p->review_field_get(p->ctx, i, f)) {
+            safe_copy(m->content_error, sizeof(m->content_error),
+                      "Some import details could not be loaded. Cancel and try again.");
+            return;
+        }
+        f->id[sizeof(f->id) - 1] = '\0';
+        f->label[sizeof(f->label) - 1] = '\0';
+        f->description[sizeof(f->description) - 1] = '\0';
+        f->value[sizeof(f->value) - 1] = '\0';
+        if (!f->id[0] ||
+            (f->type != RECOMP_CONTENT_FIELD_TEXT && f->type != RECOMP_CONTENT_FIELD_CHOICE) ||
+            (f->type == RECOMP_CONTENT_FIELD_CHOICE &&
+             (f->option_count <= 0 || !p->review_option_get))) {
+            safe_copy(m->content_error, sizeof(m->content_error),
+                      "Some import details could not be loaded. Cancel and try again.");
+            return;
+        }
+        for (int j = 0; j < i; ++j) {
+            if (strcmp(f->id, m->content_review_fields[j].id) == 0) {
+                safe_copy(m->content_error, sizeof(m->content_error),
+                          "Some import details could not be loaded. Cancel and try again.");
+                return;
+            }
+        }
+        safe_copy(m->content_review_values[i].id, sizeof(m->content_review_values[i].id), f->id);
+        safe_copy(m->content_review_values[i].value, sizeof(m->content_review_values[i].value), f->value);
+    }
+    m->content_review_count = count;
+    m->content_review_initialized = true;
+}
+
+void launcher_model_custom_content_poll(LauncherModel* m) {
+    if (!m || !m->custom_content || !m->custom_content->import_status) return;
+    RecompLauncherCCustomContentStatus status = {0};
+    status.progress = -1;
+    if (!m->custom_content->import_status(m->custom_content->ctx, &status)) {
+        content_note_error(m, "Could not read import status.");
+        return;
+    }
+    status.message[sizeof(status.message) - 1] = '\0';
+    status.detail[sizeof(status.detail) - 1] = '\0';
+    if (status.progress < -1) status.progress = -1;
+    if (status.progress > 100) status.progress = 100;
+    if (status.state < RECOMP_CONTENT_IDLE || status.state > RECOMP_CONTENT_NEEDS_INPUT) {
+        content_note_error(m, "The importer returned an unknown status.");
+        return;
+    }
+    const int previous_state = m->content_status.state;
+    m->content_status = status;
+    if (previous_state != status.state) {
+        content_review_reset(m);
+        if (status.state == RECOMP_CONTENT_NEEDS_INPUT) content_review_load(m);
+    }
+}
+
+bool launcher_model_custom_content_review_submit(LauncherModel* m) {
+    if (!launcher_model_custom_content_review_available(m) ||
+        m->content_status.state != RECOMP_CONTENT_NEEDS_INPUT ||
+        !m->content_review_initialized) return false;
+    const RecompLauncherCCustomContentProvider* p = m->custom_content;
+    if (!p->review_submit(p->ctx, m->content_review_values, m->content_review_count)) {
+        content_note_error(m, "Check the details below and try again.");
+        return false;
+    }
+    m->content_error[0] = '\0';
+    content_review_reset(m);
+    memset(&m->content_status, 0, sizeof(m->content_status));
+    m->content_status.state = RECOMP_CONTENT_BUSY;
+    m->content_status.progress = -1;
+    safe_copy(m->content_status.message, sizeof(m->content_status.message),
+              "Importing courses...");
+    return true;
+}
+
+bool launcher_model_custom_content_review_cancel(LauncherModel* m) {
+    if (!launcher_model_custom_content_review_available(m) ||
+        m->content_status.state != RECOMP_CONTENT_NEEDS_INPUT) return false;
+    const RecompLauncherCCustomContentProvider* p = m->custom_content;
+    if (!p->review_cancel(p->ctx)) {
+        content_note_error(m, "This import could not be cancelled. Please try again.");
+        return false;
+    }
+    content_review_reset(m);
+    m->content_error[0] = '\0';
+    memset(&m->content_status, 0, sizeof(m->content_status));
+    m->content_status.progress = -1;
+    return true;
+}
+
+bool launcher_model_custom_content_import(LauncherModel* m, const char* type_id,
+                                         const char* source_path,
+                                         const char* display_name) {
+    if (!launcher_model_custom_content_available(m)) return false;
+    const RecompLauncherCCustomContentProvider* p = m->custom_content;
+    launcher_model_custom_content_poll(m);
+    if (launcher_model_custom_content_busy(m)) {
+        safe_copy(m->content_error, sizeof(m->content_error),
+                  m->content_status.state == RECOMP_CONTENT_NEEDS_INPUT
+                      ? "Complete or cancel the content review first."
+                      : "Wait for the current import to finish.");
+        return false;
+    }
+    if (!p->import_start || !p->import_status || !type_id || !type_id[0] ||
+        !source_path || !source_path[0]) {
+        safe_copy(m->content_error, sizeof(m->content_error),
+                  "Choose a supported file or folder to import.");
+        return false;
+    }
+    m->content_error[0] = '\0';
+    content_review_reset(m);
+    if (!p->import_start(p->ctx, type_id, source_path,
+                          launcher_model_rom_path(m),
+                          display_name ? display_name : "")) {
+        content_note_error(m, "The importer could not start.");
+        return false;
+    }
+    memset(&m->content_status, 0, sizeof(m->content_status));
+    m->content_status.state = RECOMP_CONTENT_BUSY;
+    m->content_status.progress = -1;
+    safe_copy(m->content_status.message, sizeof(m->content_status.message),
+              "Importing custom content...");
+    return true;
+}
+
+bool launcher_model_custom_content_open_folder(LauncherModel* m,
+                                              const char* entry_id) {
+    if (!launcher_model_custom_content_available(m) ||
+        !m->custom_content->open_folder) return false;
+    const RecompLauncherCCustomContentProvider* p = m->custom_content;
+    if (!p->open_folder(p->ctx, entry_id ? entry_id : "")) {
+        content_note_error(m, "The content folder could not be opened.");
+        return false;
+    }
+    m->content_error[0] = '\0';
+    return true;
 }
 
 void launcher_model_open_config(LauncherModel* m, int player) {
@@ -3039,6 +3228,7 @@ bool launcher_model_can_finish_setup(const LauncherModel* m) {
 
 bool launcher_model_can_launch(const LauncherModel* m) {
     if (!m) return false;
+    if (launcher_model_custom_content_busy(m)) return false;
     if (!m->rom_present || strcmp(m->rom_size, "--") == 0) return false;
     if (m->rom_patch_supported && m->s.rom_patch_enabled &&
         !m->s.rom_patch_path[0]) return false;
@@ -3893,6 +4083,39 @@ void launcher_model_clear_sram(LauncherModel* m) {
     if (existing) { fclose(existing); lm_copy_file(m->sram_path, bak); remove(m->sram_path); }
 }
 
+int launcher_model_preset_count(const LauncherModel* m) {
+    const RecompLauncherCModProvider* p = m ? m->mods : NULL;
+    if (!p || !p->preset_count || !p->preset_get || !p->preset_current || !p->preset_apply)
+        return 0;
+    int n = p->preset_count(p->ctx);
+    return n > 0 && n <= 64 ? n : 0;
+}
+int launcher_model_apply_preset(LauncherModel* m, const char* id) {
+    if (!id) return 0;
+    int n = launcher_model_preset_count(m);
+    for (int i = 0; i < n; ++i) {
+        RecompLauncherCModPreset preset = {0};
+        if (!m->mods->preset_get(m->mods->ctx, i, &preset) || strcmp(preset.id, id)) continue;
+        if (m->mods->preset_apply(m->mods->ctx, id, &m->s)) {
+            m->mod_status[0] = 0;
+            return 1;
+        }
+        const char* error = m->mods->last_error ? m->mods->last_error(m->mods->ctx) : NULL;
+        safe_copy(m->mod_status, sizeof(m->mod_status), error && *error ? error : "Unable to apply preset");
+        return 0;
+    }
+    return 0;
+}
+int launcher_model_set_msu1_pack(LauncherModel* m, const char* id) {
+    if (!m || !m->msu1_supported || !id || !m->msu1_packs || m->num_msu1_packs <= 0) return 0;
+    if (!*id) { m->s.msu1_pack[0] = 0; return 1; }
+    for (int i = 0; i < m->num_msu1_packs; ++i)
+        if (m->msu1_packs[i].id && !strcmp(id, m->msu1_packs[i].id) && strlen(id) < sizeof(m->s.msu1_pack)) {
+            safe_copy(m->s.msu1_pack, sizeof(m->s.msu1_pack), id);
+            return 1;
+        }
+    return 0;
+}
 void launcher_model_toggle_msu1(LauncherModel* m) {
     if (!m->msu1_supported) return;
     m->s.msu1_enabled = !m->s.msu1_enabled;
@@ -4646,7 +4869,7 @@ const char* launcher_hotkey_name(LngHotkey h) {
 }
 
 const char* launcher_view_name(LngView v) {
-    if (v < 0 || v > LNG_VIEW_LOBBY) return "?";
+    if (v < 0 || v >= LNG_VIEW__COUNT) return "?";
     return kViewNames[v];
 }
 

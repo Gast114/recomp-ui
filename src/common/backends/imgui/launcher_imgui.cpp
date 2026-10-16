@@ -9202,7 +9202,10 @@ static void draw_lobby_match_settings(LauncherModel* m, const LauncherTheme& th,
                 const char* label = np->session_variant_label(np->ctx, i, &id);
                 if (id == current && label) selected = label;
             }
-            if (count > 0 && ImGui::BeginCombo("Connection type", selected)) {
+            const char* caption = np->session_variant_caption
+                ? np->session_variant_caption(np->ctx) : nullptr;
+            if (!caption || !caption[0]) caption = "Connection type";
+            if (count > 0 && ImGui::BeginCombo(caption, selected)) {
                 for (int i = 0; i < count; ++i) {
                     int id = 0;
                     const char* label = np->session_variant_label(np->ctx, i, &id);

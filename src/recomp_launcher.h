@@ -876,6 +876,8 @@ typedef struct RecompLauncherCNetplayCallbacks {
      * Servers that predate it simply keep the legacy path. */
     int  (*relay_via_ice_get)(void* ctx);
     int  (*relay_via_ice_set)(void* ctx, int on);
+    /* Optional title vocabulary; NULL preserves "Connection type". */
+    const char* (*session_variant_caption)(void* ctx);
 } RecompLauncherCNetplayCallbacks;
 
 /* recomp_launcher_run_window honours RECOMP_NETPLAY_LAUNCH through

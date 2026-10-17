@@ -489,6 +489,16 @@ if(BUILD_TESTING)
     add_test(NAME recomp-ui-assist-pad-capture
              COMMAND $<TARGET_FILE:recomp-ui-assist-pad-capture-test>)
 
+    add_executable(recomp-ui-pad-capture-test
+        tests/launcher_pad_capture_test.c
+        src/common/launcher_model.c
+        src/common/crc32.c src/common/sha1.c src/common/sha256.c
+        src/common/ips_patch.c src/consoles/psx/memcard_format.c)
+    target_include_directories(recomp-ui-pad-capture-test PRIVATE
+        src src/common src/consoles/psx)
+    add_test(NAME recomp-ui-pad-capture
+             COMMAND $<TARGET_FILE:recomp-ui-pad-capture-test>)
+
     # The shared presentation blend, including the holding variant a host with
     # a decoupled presentation clock needs. Pure arithmetic on two buffers, so
     # no SDL and no window.

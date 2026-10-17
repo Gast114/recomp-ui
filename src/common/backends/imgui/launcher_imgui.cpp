@@ -14,6 +14,7 @@
 #include "launcher_boot_timing.h"
 #include "launcher_gl.h"
 #include "launcher_input.h"
+#include "launcher_pad_capture.h"
 #include "launcher_files.h"
 #include "launcher_directory_url.h"
 #include "launcher_debug.h"
@@ -6225,9 +6226,10 @@ void draw_controller_config_view(LauncherModel* m, const LauncherTheme& th) {
                                 launcher_model_begin_pad_capture(m, b);
                                 // If they start a bind while still holding the
                                 // prior input, wait for a full release first.
-                                if (m->capturing && m->player_pad_id[p] &&
-                                    !launcher_input_gamepad_at_rest(
-                                        m->player_pad_id[p]))
+                                uint32_t selected_id = 0;
+                                if (m->capturing && launcher_pad_capture_resolve(
+                                        m, g_pads, g_pad_count, &selected_id) == 1 &&
+                                    !launcher_input_gamepad_at_rest(selected_id))
                                     m->map_all_wait_release = true;
                             }
                             if (cap) ImGui::PopStyleColor();
@@ -6239,8 +6241,10 @@ void draw_controller_config_view(LauncherModel* m, const LauncherTheme& th) {
                 ImGui::Spacing();
                 if (ImGui::Button("Map All Bindings")) {
                     launcher_model_begin_map_all(m);
-                    if (m->capturing && m->player_pad_id[p] &&
-                        !launcher_input_gamepad_at_rest(m->player_pad_id[p]))
+                    uint32_t selected_id = 0;
+                    if (m->capturing && launcher_pad_capture_resolve(
+                            m, g_pads, g_pad_count, &selected_id) == 1 &&
+                        !launcher_input_gamepad_at_rest(selected_id))
                         m->map_all_wait_release = true;
                 }
                 ImGui::SameLine();
@@ -6534,8 +6538,10 @@ void draw_controller_config_view(LauncherModel* m, const LauncherTheme& th) {
             const int b = (cell >= 0 && cell < automap_total)
                 ? (vertical ? order[cell] : cell)
                 : 0;
-            const uint32_t pad_id_now = m->player_pad_id[p];
-            const bool settling = pad_src && pad_id_now && !m->capturing &&
+            uint32_t pad_id_now = 0;
+            const bool selected = launcher_pad_capture_resolve(
+                m, g_pads, g_pad_count, &pad_id_now) == 1;
+            const bool settling = pad_src && selected && !m->capturing &&
                                   !launcher_input_gamepad_at_rest(pad_id_now);
             if (settling) {
                 ImGui::TextColored(col(th.warn),
@@ -14342,19 +14348,9 @@ bool try_capture(LauncherModel* m, const SDL_Event& ev) {
          * filter keyed on it would have let any pad bind. Resolve the GUID
          * against the live device list here so the rule holds from a restored
          * selection too. */
-        uint32_t want_id = m->player_pad_id[m->cfg_player];
-        if (!want_id && m->s.player_src[m->cfg_player] == 2) {
-            const char* want_guid = m->s.player_gamepad_guid[m->cfg_player];
-            if (want_guid[0]) {
-                for (int i = 0; i < g_pad_count; ++i) {
-                    if (g_pads[i].guid[0] &&
-                        std::strcmp(g_pads[i].guid, want_guid) == 0) {
-                        want_id = g_pads[i].id;
-                        break;
-                    }
-                }
-            }
-        }
+        uint32_t want_id = 0;
+        const int selected = launcher_pad_capture_resolve(
+            m, g_pads, g_pad_count, &want_id);
         auto from_selected = [&](uint32_t which) -> bool {
             /* A binding belongs to the device the player SELECTED.
              *
@@ -14364,13 +14360,13 @@ bool try_capture(LauncherModel* m, const SDL_Event& ev) {
              * no way to tell which had won. If a device is selected, only that
              * device may bind.
              *
-             * want_id == 0 means no specific device is chosen (the console
+             * selected == 0 means no specific device is chosen (the console
              * offers a generic "Gamepad" source), and any pad is accepted --
              * which is the behaviour Genesis had and keeps. A per-GUID store
              * additionally refuses when its selection has not resolved to a
              * live device, because the binding would otherwise be written
              * against the wrong profile. */
-            if (!want_id) return !guid_store;
+            if (selected <= 0) return selected == 0 && !guid_store;
             return which == want_id;
         };
         auto try_clear_release_wait = [&](uint32_t which) {
@@ -14852,8 +14848,9 @@ extern "C" LngAction launcher_backend_run(LauncherPlatform* p,
             // Pad capture release-gate: clear once the selected pad is fully at
             // rest (covers the case where SDL stops sending AXIS_MOTION at rest).
             if (m->capturing && m->capture_pad && m->map_all_wait_release) {
-                const uint32_t id = m->player_pad_id[m->cfg_player];
-                if (id && launcher_input_gamepad_at_rest(id))
+                uint32_t id = 0;
+                if (launcher_pad_capture_resolve(m, g_pads, g_pad_count, &id) == 1 &&
+                    launcher_input_gamepad_at_rest(id))
                     m->map_all_wait_release = false;
             }
 
@@ -14864,8 +14861,8 @@ extern "C" LngAction launcher_backend_run(LauncherPlatform* p,
                 m->capture_btn >= 0 && m->capture_btn <= 3) {
                 const SystemProfile* poll_prof = (const SystemProfile*)m->profile;
                 if (poll_prof && poll_prof->id && !strcmp(poll_prof->id, "psx")) {
-                    const uint32_t id = m->player_pad_id[m->cfg_player];
-                    if (id) {
+                    uint32_t id = 0;
+                    if (launcher_pad_capture_resolve(m, g_pads, g_pad_count, &id) == 1) {
     #if defined(LNG_SDL3)
                         static const int kExpect[4] = {
                             (int)SDL_GAMEPAD_BUTTON_DPAD_UP,

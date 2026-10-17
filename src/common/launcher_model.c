@@ -3383,6 +3383,9 @@ void launcher_model_fmv_timing_confirm_accept(LauncherModel* m) {
 bool launcher_model_can_advance_toolchain(const LauncherModel* m) {
     if (!m || !m->setup_needs_toolchain) return true;
     if (m->setup_preparing) return false;
+#if !defined(_WIN32)
+    return true; /* The host callback probes native tools, without an installer. */
+#endif
     const int want_update =
         m->setup_tc_update_available && !m->setup_tc_update_skipped;
     if (m->setup_tc_ready && !want_update) return true;
@@ -3416,7 +3419,11 @@ void launcher_model_start_ensure_toolchain(LauncherModel* m) {
         m->setup_page = 1;
         m->setup_error[0] = '\0';
         safe_copy(m->setup_status, sizeof(m->setup_status),
+#if defined(_WIN32)
                   "Using existing portable toolchain.");
+#else
+                  "Using native build tools.");
+#endif
         return;
     }
     if (!m->ensure_toolchain_with_progress_cb) {
@@ -3433,6 +3440,7 @@ void launcher_model_start_ensure_toolchain(LauncherModel* m) {
     g_prep_job.m = m;
     g_prep_job.kind = PREP_JOB_TOOLCHAIN;
     g_prep_job.progress_pct = -1.0f;
+#if defined(_WIN32)
     /* download: 0 = zip only, 1 = fetch if missing, 2 = force latest update */
     if (m->setup_tc_auto)
         g_prep_job.download = want_update ? 2 : 1;
@@ -3440,17 +3448,24 @@ void launcher_model_start_ensure_toolchain(LauncherModel* m) {
         g_prep_job.download = 0;
     if (!m->setup_tc_auto && m->setup_tc_zip[0])
         safe_copy(g_prep_job.zip_path, sizeof(g_prep_job.zip_path), m->setup_tc_zip);
+#endif
     m->setup_preparing = true;
     m->setup_prepare_pulse = 0.0f;
     m->setup_prepare_fraction = -1.0f;
     m->setup_error[0] = '\0';
     safe_copy(m->setup_progress_title, sizeof(m->setup_progress_title),
+#if defined(_WIN32)
               want_update ? "Updating build tools…" : "Installing build tools…");
     safe_copy(m->setup_status, sizeof(m->setup_status),
               m->setup_tc_auto
                   ? (want_update ? "Downloading toolchain update…"
                                  : "Downloading portable cmake/clang…")
                   : "Installing toolchain from zip…");
+#else
+              "Checking native build tools…");
+    safe_copy(m->setup_status, sizeof(m->setup_status),
+              "Checking CMake, Ninja, Python 3 and C/C++ compilers on PATH…");
+#endif
     prep_spawn_thread(m);
 }
 

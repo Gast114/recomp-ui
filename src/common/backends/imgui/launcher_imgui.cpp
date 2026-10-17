@@ -13126,14 +13126,19 @@ void draw_setup_wizard_modal(LauncherModel* m, const LauncherTheme& th) {
         return;
     }
 
-    /* ---- Page 0: portable toolchain ------------------------------------ */
+    /* ---- Page 0: build tools ------------------------------------------- */
     if (m->setup_needs_toolchain && m->setup_page == 0) {
+#if defined(_WIN32)
         const bool want_update =
             m->setup_tc_ready && m->setup_tc_update_available &&
             !m->setup_tc_update_skipped;
+#else
+        const bool want_update = false;
+#endif
         ImGui::TextColored(col(th.accent),
                            want_update ? "Toolchain update" : "Build tools");
         ImGui::PushTextWrapPos(wrap_x);
+#if defined(_WIN32)
         if (want_update) {
             ImGui::TextColored(col(th.text_muted),
                 "%s found a newer portable cmake/clang pack. Update now "
@@ -13225,6 +13230,20 @@ void draw_setup_wizard_modal(LauncherModel* m, const LauncherTheme& th) {
             }
             ImGui::PopStyleVar();
         }
+#else
+        ImGui::TextColored(col(th.text_muted),
+            "%s builds game sources on your machine. Linux and macOS use "
+            "build tools installed on your system.", game);
+        ImGui::PopTextWrapPos();
+        ImGui::Dummy(ImVec2(0, px(12)));
+        ImGui::TextUnformatted("1. Native build tools");
+        ImGui::PushTextWrapPos(wrap_x);
+        ImGui::TextColored(col(th.text_muted),
+            "Install CMake, Ninja, Python 3, and either Clang or GCC with "
+            "your package manager. Make sure they are on PATH, then select "
+            "Check tools.");
+        ImGui::PopTextWrapPos();
+#endif
 
         if (m->setup_status[0]) {
             ImGui::Dummy(ImVec2(0, px(8)));
@@ -13242,7 +13261,12 @@ void draw_setup_wizard_modal(LauncherModel* m, const LauncherTheme& th) {
         ImGui::Dummy(ImVec2(0, px(14)));
         const bool can_next = launcher_model_can_advance_toolchain(m);
         if (!can_next) ImGui::BeginDisabled();
-        if (ImGui::Button(want_update ? "Update##tc_next" : "Next##tc_next",
+        if (ImGui::Button(
+#if defined(_WIN32)
+                          want_update ? "Update##tc_next" : "Next##tc_next",
+#else
+                          "Check tools##tc_next",
+#endif
                           ImVec2(px(140), px(34)))) {
             launcher_model_start_ensure_toolchain(m);
             if (m->setup_preparing) {
@@ -13254,10 +13278,13 @@ void draw_setup_wizard_modal(LauncherModel* m, const LauncherTheme& th) {
         }
         if (!can_next) {
             ImGui::EndDisabled();
+#if defined(_WIN32)
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
                 ImGui::SetTooltip(
                     "Enable automatic download or select a toolchain zip");
+#endif
         }
+#if defined(_WIN32)
         if (want_update) {
             ImGui::SameLine();
             if (ImGui::Button("Skip for now##tc_skip", ImVec2(px(140), px(34))))
@@ -13266,6 +13293,7 @@ void draw_setup_wizard_modal(LauncherModel* m, const LauncherTheme& th) {
                 ImGui::SetTooltip(
                     "Keep the installed toolchain for this session.");
         }
+#endif
         ImGui::SameLine();
         if (ImGui::Button("Quit", ImVec2(px(100), px(34))))
             m->action = LNG_ACTION_QUIT;

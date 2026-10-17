@@ -255,11 +255,16 @@ static bool launcher_debug_step_impl(LauncherPlatform* p, LauncherModel* m) {
         char reply[2048];
         int at = snprintf(reply, sizeof(reply),
             "{\"ok\":true,\"frame\":%lu,\"hidden\":%s,\"window_hidden\":%s,\"view\":\"%s\",\"view_id\":%d,"
-            "\"players\":%d,\"netplay\":%s,\"width\":%d,\"height\":%d,\"inputs\":[",
+            "\"players\":%d,\"netplay\":%s,\"netplay_mode\":%d,"
+            "\"netplay_disc_ok\":%s,\"disc_verdict\":%d,\"netplay_mount_ok\":%s,"
+            "\"disc_fp_present\":%s,\"width\":%d,\"height\":%d,\"inputs\":[",
             g_frame, launcher_debug_hidden() ? "true" : "false",
             (SDL_GetWindowFlags(p->window) & SDL_WINDOW_HIDDEN) ? "true" : "false",
             launcher_view_name(m->view), (int)m->view, launcher_model_visible_player_count(m),
-            m->netplay_supported ? "true" : "false", p->logical_w, p->logical_h);
+            m->netplay_supported ? "true" : "false", m->netplay_mode,
+            launcher_model_netplay_disc_ok(m) ? "true" : "false", m->verify.verdict,
+            m->verify.netplay_ok ? "true" : "false", m->verify.disc_fp[0] ? "true" : "false",
+            p->logical_w, p->logical_h);
         for (int i = 0; i < launcher_model_visible_player_count(m); ++i)
             at += snprintf(reply + at, sizeof(reply) - (size_t)at,
                 "%s{\"source\":%d,\"instance\":%u}", i ? "," : "",

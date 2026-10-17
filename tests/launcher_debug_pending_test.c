@@ -10,6 +10,7 @@ void launcher_model_begin_capture(LauncherModel* m, int button) { ++mutations; m
 void launcher_model_begin_hk_capture(LauncherModel* m, LngHotkey hotkey) { (void)m; (void)hotkey; ++mutations; }
 void launcher_platform_refresh_metrics(LauncherPlatform* p) { (void)p; }
 int launcher_model_visible_player_count(const LauncherModel* m) { (void)m; return 4; }
+bool launcher_model_netplay_disc_ok(const LauncherModel* m) { (void)m; return false; }
 const char* launcher_view_name(LngView view) { (void)view; return "test"; }
 static void check(int ok, const char* what) {
     if (!ok) { fprintf(stderr, "FAIL: %s\n", what); ++failures; }

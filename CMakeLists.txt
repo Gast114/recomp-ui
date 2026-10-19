@@ -146,6 +146,16 @@ if(BUILD_TESTING)
         COMMAND $<TARGET_FILE:recomp-ui-launcher-files-spawn-test>
                 "${CMAKE_CURRENT_BINARY_DIR}")
 
+    # Compile the Android picker contract on the host too. The tri-state
+    # unavailable result must reach the in-app browser, never desktop helpers.
+    add_executable(recomp-ui-launcher-files-android-test
+        tests/launcher_files_android_test.c
+        src/common/launcher_files.c
+        src/third_party/tinyfiledialogs.c)
+    target_compile_definitions(recomp-ui-launcher-files-android-test PRIVATE __ANDROID__)
+    target_include_directories(recomp-ui-launcher-files-android-test PRIVATE src src/common)
+    add_test(NAME recomp-ui-launcher-files-android COMMAND recomp-ui-launcher-files-android-test)
+
     # The blocking launcher_pick_* wrappers must not come back into a UI
     # backend: they hide "no usable native picker" as "user cancelled", which
     # is how 14 Browse buttons shipped dead on Linux. ui_pick() is the only

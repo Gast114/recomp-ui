@@ -11333,6 +11333,13 @@ static void mod_note_error(LauncherModel* m) {
 static bool mod_commit_launch(LauncherModel* m) {
     if (!m || !m->mods || !m->mods->commit ||
         m->mods->commit(m->mods->ctx, launcher_model_effective_rom_path(m))) {
+        if (m && m->has_bios && m->bios_verify_for_rom_cb) {
+            launcher_model_refresh_bios_status(m);
+            if (!m->setup_bios_ok) {
+                std::snprintf(m->mod_status, sizeof(m->mod_status), "%s", m->setup_bios_detail);
+                return false;
+            }
+        }
         return true;
     }
     mod_note_error(m);
@@ -11604,6 +11611,8 @@ static void draw_mod_packages(LauncherModel* m, const LauncherTheme& th) {
                     if (!mods->set_enabled ||
                         !mods->set_enabled(mods->ctx, package.id, enabled ? 1 : 0))
                         mod_note_error(m);
+                    if (m->has_bios && m->bios_verify_for_rom_cb)
+                        launcher_model_refresh_bios_status(m);
                 }
             }
             if (mods->version_count && mods->version_get && mods->select_version) {
@@ -11727,6 +11736,8 @@ static void draw_mod_packages(LauncherModel* m, const LauncherTheme& th) {
                 if (changed && (!mods->set_option ||
                     !mods->set_option(mods->ctx, package.id, option.id, next)))
                     mod_note_error(m);
+                if (changed && m->has_bios && m->bios_verify_for_rom_cb)
+                    launcher_model_refresh_bios_status(m);
                 ImGui::PopID();
             }
         } else {
@@ -11831,6 +11842,8 @@ static void draw_mod_feature_option(LauncherModel* m,
                                   option.id, next)) {
         mod_note_error(m);
     }
+    if (changed && !inert && m->has_bios && m->bios_verify_for_rom_cb)
+        launcher_model_refresh_bios_status(m);
     ImGui::PopID();
 }
 
@@ -11928,6 +11941,8 @@ static bool disable_all_mod_features(LauncherModel* m) {
         }
         changed.push_back(index);
     }
+    if (m->has_bios && m->bios_verify_for_rom_cb)
+        launcher_model_refresh_bios_status(m);
     std::snprintf(m->mod_status, sizeof(m->mod_status),
                   "All mod features disabled. Changes apply on PLAY.");
     return true;
@@ -12100,6 +12115,8 @@ static void draw_mod_features(LauncherModel* m, const LauncherTheme& th) {
                             prompt_missing_mod_resources(
                                 m, feature.package_id, feature.id);
                         }
+                        if (m->has_bios && m->bios_verify_for_rom_cb)
+                            launcher_model_refresh_bios_status(m);
                     }
                     if (ImGui::IsItemHovered())
                         ImGui::SetTooltip("%s %s",

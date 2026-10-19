@@ -39,6 +39,7 @@ if(SNESRECOMP_SDL_BACKEND STREQUAL "SDL3")
 elseif(SNESRECOMP_SDL_BACKEND STREQUAL "SDL2")
     find_package(SDL2 REQUIRED)
     set(RUI_SDL_TARGET SDL2::SDL2)
+    set(RUI_SDL_DEFS SDL_MAIN_HANDLED=1)
     get_target_property(RUI_SDL2_TARGET_TYPE SDL2::SDL2 TYPE)
     if(RUI_SDL2_TARGET_TYPE STREQUAL "SHARED_LIBRARY")
         set(RUI_SDL_RUNTIME_TARGET SDL2::SDL2)
@@ -497,6 +498,10 @@ if(BUILD_TESTING)
     add_test(
         NAME recomp-ui-nds-profile
         COMMAND $<TARGET_FILE:recomp-ui-nds-profile-test>)
+
+    add_executable(recomp-ui-gb-profile-test tests/gb_profile_test.c)
+    target_include_directories(recomp-ui-gb-profile-test PRIVATE src src/common)
+    add_test(NAME recomp-ui-gb-profile COMMAND $<TARGET_FILE:recomp-ui-gb-profile-test>)
 
     add_executable(recomp-ui-assist-pad-capture-test
         tests/launcher_assist_pad_capture_test.c

@@ -228,6 +228,13 @@ if(BUILD_TESTING)
     target_include_directories(recomp-runtime-ui-test PRIVATE src)
     add_test(NAME recomp-runtime-ui COMMAND $<TARGET_FILE:recomp-runtime-ui-test>)
 
+    add_executable(recomp-runtime-ui-view-test
+        tests/runtime_ui_view_test.c
+        src/common/recomp_runtime_ui.c)
+    target_include_directories(recomp-runtime-ui-view-test PRIVATE src)
+    add_test(NAME recomp-runtime-ui-view
+             COMMAND $<TARGET_FILE:recomp-runtime-ui-view-test>)
+
     # psxrecomp in-game menu provider (src/consoles/psx/psx_menu_provider.cpp)
     # against a fake host. Needs the psxrecomp runtime include dir for
     # psx_menu_host.h (the contract is psxrecomp's): -DRECOMP_UI_PSXRECOMP_ROOT=

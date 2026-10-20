@@ -349,11 +349,27 @@ static int lm_load_cached_rom_path(const RecompLauncherCGameInfo* game,
     return 0;
 }
 
+#if defined(_WIN32)
+/* windows/recomp_utf8.manifest makes narrow paths UTF-8 to match the pickers.
+ * Windows older than 10 1903 ignores it; say so once, because a non-ASCII
+ * path then fails in ways that otherwise look unrelated. */
+static void lm_warn_non_utf8_code_page(void) {
+    static int warned;
+    if (warned || GetACP() == CP_UTF8) return;
+    warned = 1;
+    fprintf(stderr, "[launcher] process code page is %u, not UTF-8; paths with "
+                    "non-ASCII characters may not open\n", (unsigned)GetACP());
+}
+#endif
+
 void launcher_model_init(LauncherModel* m,
                          const RecompLauncherCSettings* io,
                          const RecompLauncherCGameInfo* game,
                          const char* initial_rom) {
     memset(m, 0, sizeof(*m));
+#if defined(_WIN32)
+    lm_warn_non_utf8_code_page();
+#endif
 
     if (game) {
         m->game_name            = game->name ? game->name : "Unknown Game";

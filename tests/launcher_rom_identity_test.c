@@ -145,8 +145,10 @@ int main(int argc, char** argv) {
     launcher_model_set_rom(m, unknown);
     require(m->rom_verdict == LNG_ROM_UNRECOGNIZED, "unknown dump");
     require(describe_calls == 1, "host describes an unknown dump");
-    require_has(m->rom_detail, "Header says \"HACKD\".", "host description leads");
-    require_has(m->rom_detail, unknown_sha, "gives the file's SHA-256");
+    require_has(m->rom_detail, "This file matches no known dump. Header says \"HACKD\".",
+                "host description");
+    launcher_model_rom_report(m, report, sizeof(report));
+    require_has(report, unknown_sha, "report gives the file's SHA-256");
     require_has(m->rom_detail, good_sha, "gives the required SHA-256");
     require(!launcher_model_can_launch(m), "unknown dump cannot launch");
 

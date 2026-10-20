@@ -140,9 +140,9 @@ gi.rom_help = "Headered (.smc) and headerless (.sfc) dumps both work.";
 Digests cover the image after any copier/iNES header. A supported entry
 verifies the ROM (alongside `expected_crc` / `known_sha256` / `known_sha1_hex`);
 any other match shows "Wrong ROM: This is My Game (USA). My Game needs My Game
-(USA) (Rev 1) (SHA-256 ...)". A file nothing matches shows its own SHA-256, an
-optional `gi.rom_describe` host probe's description (e.g. the internal header's
-title and version), and the requirement. ZIP/7z/RAR/gzip archives and
+(USA) (Rev 1) (SHA-256 ...)". A file nothing matches shows an optional
+`gi.rom_describe` host probe's description (e.g. the internal header's title
+and version) and the requirement. ZIP/7z/RAR/gzip archives and
 unreadable files get their own message, and **Copy details** puts the file's
 SHA-256/SHA-1/CRC32 and the requirement on the clipboard for bug reports.
 

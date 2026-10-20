@@ -1495,17 +1495,21 @@ static void lm_identify_rom(LauncherModel* m, const uint8_t* buf, size_t n) {
         if (hit->note && hit->note[0])
             lm_appendf(m->rom_detail, sizeof(m->rom_detail), " %s", hit->note);
     } else {
+        /* The file's own digests stay in Copy details; the panel says what
+         * the file looks like and what to get instead. */
         char seen[256] = "";
         m->rom_verdict = LNG_ROM_UNRECOGNIZED;
         if (m->rom_describe &&
             m->rom_describe(m->rom_describe_ctx, body, blen, seen, sizeof(seen)) &&
             seen[0])
-            snprintf(m->rom_detail, sizeof(m->rom_detail), "%s ", seen);
-        lm_appendf(m->rom_detail, sizeof(m->rom_detail),
-                   "This file does not match any known dump (its SHA-256 is %s). "
-                   "It may be another revision or region, a hack, a translation "
-                   "or a bad dump. %s needs %s.",
-                   m->rom_sha256_hex, game, need);
+            snprintf(m->rom_detail, sizeof(m->rom_detail),
+                     "This file matches no known dump. %s %s needs %s.",
+                     seen, game, need);
+        else
+            snprintf(m->rom_detail, sizeof(m->rom_detail),
+                     "This file matches no known dump: it may be another "
+                     "revision or region, a hack, a translation or a bad dump. "
+                     "%s needs %s.", game, need);
     }
     if (m->rom_help && m->rom_help[0])
         lm_appendf(m->rom_detail, sizeof(m->rom_detail), " %s", m->rom_help);

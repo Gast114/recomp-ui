@@ -324,7 +324,10 @@ extern "C" void recomp_runtime_ui_render_imgui(RecompRuntimeUi *ui) {
         ImVec2(0.0f, 0.0f), display,
         IM_COL32(0, 0, 0, static_cast<int>(255.0f * ui->dim + 0.5f)));
 
-    const float short_axis = std::min(display.x, display.y);
+    const ImGuiViewport *viewport = ImGui::GetMainViewport();
+    const ImVec2 area = viewport->WorkSize;
+    const ImVec2 origin = viewport->WorkPos;
+    const float short_axis = std::min(area.x, area.y);
     const float touch_row_height =
         std::clamp(short_axis * 0.085f, 92.0f, 124.0f);
     const float metric_scale =
@@ -340,16 +343,16 @@ extern "C" void recomp_runtime_ui_render_imgui(RecompRuntimeUi *ui) {
     const float margin = touch_friendly
         ? std::max(20.0f, short_axis * 0.025f)
         : 24.0f;
-    const float max_width = touch_friendly ? display.x : 780.0f;
-    const float max_height = touch_friendly ? display.y : 680.0f;
-    const float width = display.x - margin * 2.0f < max_width
-                            ? display.x - margin * 2.0f
+    const float max_width = touch_friendly ? area.x : 780.0f;
+    const float max_height = touch_friendly ? area.y : 680.0f;
+    const float width = area.x - margin * 2.0f < max_width
+                            ? area.x - margin * 2.0f
                             : max_width;
-    const float height = display.y - margin * 2.0f < max_height
-                             ? display.y - margin * 2.0f
+    const float height = area.y - margin * 2.0f < max_height
+                             ? area.y - margin * 2.0f
                              : max_height;
     const bool wide = width >= (touch_friendly ? 900.0f : 640.0f);
-    ImGui::SetNextWindowPos(ImVec2(display.x * 0.5f, display.y * 0.5f),
+    ImGui::SetNextWindowPos(ImVec2(origin.x+area.x * 0.5f, origin.y+area.y * 0.5f),
                             ImGuiCond_Always, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(width, height), ImGuiCond_Always);
 

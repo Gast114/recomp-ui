@@ -651,7 +651,13 @@ LNG_VARIANT=genesis ./build/recomp-ui-launcher
 [`src/launcher_debug.h`](src/launcher_debug.h)).
 
 Requires SDL3 (`find_package(SDL3 CONFIG)`) by default, OpenGL, and a C++17
-compiler. Configure with `-DSNESRECOMP_SDL_BACKEND=SDL2` to exercise the
+compiler.
+
+On Windows, `recomp_target_launcher_ui()` embeds `windows/recomp_utf8.manifest`
+in the executable (unless the host already embeds a manifest). It sets the
+process code page to UTF-8, so the UTF-8 paths the pickers return open through
+`fopen` and `std::filesystem` alike, including folders such as `Recompilé`.
+Windows older than 10 1903 ignores it, and the launcher logs a warning. Configure with `-DSNESRECOMP_SDL_BACKEND=SDL2` to exercise the
 supported SDL2 fallback.
 
 ---

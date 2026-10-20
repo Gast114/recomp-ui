@@ -2215,6 +2215,10 @@ void draw_game_panel(LauncherModel* m, const LauncherTheme& th, bool fill_h = fa
         if (m->setup_error[0])
             reserve += ImGui::CalcTextSize(m->setup_error, nullptr, false, availw).y
                        + ImGui::GetStyle().ItemSpacing.y;
+        // Why the picked ROM is refused, plus its "Copy details" button.
+        if (!disc_verdict && m->rom_detail[0])
+            reserve += ImGui::CalcTextSize(m->rom_detail, nullptr, false, availw).y
+                       + px(40.0f);
         const float card_h = g_game_visible_h - ImGui::GetStyle().WindowPadding.y * 2.0f;
         float art_h = card_h - reserve;
         if (art_h > px(368.0f)) art_h = px(368.0f);   // allow a larger hero box art (~15% bigger than before)
@@ -2233,14 +2237,27 @@ void draw_game_panel(LauncherModel* m, const LauncherTheme& th, bool fill_h = fa
     } else {
         const bool verified = launcher_model_rom_verified(m);
         char line[64];
-        if (!m->rom_present)   snprintf(line, sizeof(line), "No %s loaded", noun);
-        else if (verified)     snprintf(line, sizeof(line), "%s verified", noun);
-        else                   snprintf(line, sizeof(line), "%s not recognized", noun);
+        launcher_model_rom_headline(m, line, sizeof(line));
         float w = ImGui::GetTextLineHeight() + px(6) + ImGui::CalcTextSize(line).x;
         ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (availw - w) * 0.5f);
         state_mark(verified, th);
         ImGui::SameLine(0, px(6));
         ImGui::TextColored(verified ? col(th.good) : col(th.warn), "%s", line);
+        // Say WHICH ROM this is and which one the build needs (with its
+        // SHA-256), instead of leaving the player at "not recognized".
+        if (m->rom_detail[0]) {
+            ImGui::Dummy(ImVec2(0, px(4)));
+            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + availw);
+            ImGui::TextColored(col(th.text_muted), "%s", m->rom_detail);
+            ImGui::PopTextWrapPos();
+            if (ImGui::SmallButton(ui_text("Copy details"))) {
+                char report[2048];
+                launcher_model_rom_report(m, report, sizeof(report));
+                ImGui::SetClipboardText(report);
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", ui_text("Copy this file's checksums and the required ROM"));
+        }
     }
     ImGui::Dummy(ImVec2(0, px(10)));
 
@@ -9490,9 +9507,11 @@ static void draw_lobby_mod_files_popup(LauncherModel* m, const LauncherTheme& th
                                file.resource.description);
             ImGui::PopTextWrapPos();
         }
+        ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + wrap);
         ImGui::TextColored(col(th.warn), "%s",
                            file.resource.status[0] ? file.resource.status
                                                    : "Not selected");
+        ImGui::PopTextWrapPos();
         if (ImGui::Button(file.resource.path[0] ? "Change file"
                                                 : "Select file"))
             pick_mod_feature_resource(m, file.package_id.c_str(),
@@ -12259,11 +12278,13 @@ static void draw_mod_features(LauncherModel* m, const LauncherTheme& th) {
                         }
                         if (resource.description[0])
                             ImGui::TextWrapped("%s", resource.description);
+                        ImGui::PushTextWrapPos(0.0f);
                         ImGui::TextColored(
                             resource.verified ? col(th.accent2) :
                                 !resource.required && !resource.path[0] ? col(th.text_muted) : col(th.warn),
                             "%s", resource.status[0]
                                       ? resource.status : ui_text("Not selected"));
+                        ImGui::PopTextWrapPos();
                         if (resource.path[0]) {
                             const char* basename = resource.path;
                             for (const char* p = resource.path; *p; ++p)
@@ -12802,6 +12823,15 @@ void draw_footer(LauncherModel* m, const LauncherTheme& th, float footer_h) {
             ImGui::SetTooltip("Select a verified %s first", noun);
         } else if (m->setup_preparing) {
             ImGui::SetTooltip("Wait for the current setup job to finish");
+        } else if (m->rom_detail[0]) {
+            char headline[64];
+            launcher_model_rom_headline(m, headline, sizeof(headline));
+            ImGui::BeginTooltip();
+            ImGui::PushTextWrapPos(ImGui::GetFontSize() * 32.0f);
+            ImGui::TextUnformatted(headline);
+            ImGui::TextUnformatted(m->rom_detail);
+            ImGui::PopTextWrapPos();
+            ImGui::EndTooltip();
         } else {
             ImGui::SetTooltip("Select a valid %s first", noun);
         }

@@ -159,6 +159,30 @@ int main(int argc, char** argv) {
     launcher_model_rom_headline(m, headline, sizeof(headline));
     require(strcmp(headline, "Archive, not a ROM") == 0, "archive headline");
 
+    /* A verified ROM that happens to start with archive magic stays verified. */
+    {
+        static uint8_t gz_body[1024];
+        char gz[1024], gz_sha[65];
+        memset(gz_body, 0x66, sizeof(gz_body));
+        gz_body[0] = 0x1F; gz_body[1] = 0x8B;
+        snprintf(gz, sizeof(gz), "%s/gzip-magic.sfc", argv[1]);
+        write_bytes(gz, gz_body, sizeof(gz_body));
+        sha256_hex(gz_body, sizeof(gz_body), gz_sha);
+        const RecompLauncherCRomRevision gz_rev[] = {
+            {"Magic Game", gz_sha, NULL, NULL, 1, NULL},
+        };
+        RecompLauncherCGameInfo gz_game = {0};
+        gz_game.name = "Magic Game";
+        gz_game.rom_revisions = gz_rev;
+        gz_game.num_rom_revisions = 1;
+        LauncherModel* g = calloc(1, sizeof(*g));
+        require(g != NULL, "allocate model");
+        launcher_model_init(g, &settings, &gz_game, "");
+        launcher_model_set_rom(g, gz);
+        require(g->rom_verdict == LNG_ROM_VERIFIED, "digest wins over archive magic");
+        free(g);
+    }
+
     /* Unreadable. */
     launcher_model_set_rom(m, missing);
     require(m->rom_verdict == LNG_ROM_UNREADABLE, "missing file is unreadable");

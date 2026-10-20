@@ -1412,16 +1412,6 @@ static void lm_set_rom_unreadable(LauncherModel* m, const char* why) {
 /* Fingerprint the picked cartridge image and explain the result: verified,
  * a known dump this build does not run (named), an archive, or unknown. */
 static void lm_identify_rom(LauncherModel* m, const uint8_t* buf, size_t n) {
-    const char* archive = lm_archive_kind(buf, n);
-    if (archive) {
-        const char* noun = (m->rom_noun && m->rom_noun[0]) ? m->rom_noun : "ROM";
-        m->rom_verdict = LNG_ROM_ARCHIVE;
-        snprintf(m->rom_detail, sizeof(m->rom_detail),
-                 "This is a %s archive, not a %s. Extract it first, then "
-                 "select the %s file that was inside.", archive, noun, noun);
-        return;
-    }
-
     /* Normalize container headers before fingerprinting.
      * SNES .smc images may carry a 512-byte copier header;
      * NES .nes images carry a 16-byte iNES/NES 2.0 header.
@@ -1477,6 +1467,16 @@ static void lm_identify_rom(LauncherModel* m, const uint8_t* buf, size_t n) {
                            (!m->num_known_sha1 || m->sha1_match);
     if (legacy_ok || (hit && hit->supported)) {
         m->rom_verdict = LNG_ROM_VERIFIED;
+        return;
+    }
+    /* Only after the digests disagree: a ROM may begin with any bytes. */
+    const char* archive = hit ? NULL : lm_archive_kind(buf, n);
+    if (archive) {
+        const char* noun = (m->rom_noun && m->rom_noun[0]) ? m->rom_noun : "ROM";
+        m->rom_verdict = LNG_ROM_ARCHIVE;
+        snprintf(m->rom_detail, sizeof(m->rom_detail),
+                 "This is a %s archive, not a %s. Extract it first, then "
+                 "select the %s file that was inside.", archive, noun, noun);
         return;
     }
     if (!legacy_fp && !lm_has_supported_revision(m)) {

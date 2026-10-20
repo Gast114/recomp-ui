@@ -51,6 +51,9 @@ extern "C" {
 #define RECOMP_LAUNCHER_HAS_VSYNC 1
 /* Host may #ifdef this when reading Settings.virtual_stylus. */
 #define RECOMP_LAUNCHER_HAS_VIRTUAL_STYLUS 1
+/* Host may #ifdef this when filling GameInfo.rom_revisions / rom_help /
+ * rom_describe (RecompLauncherCRomRevision). */
+#define RECOMP_LAUNCHER_HAS_ROM_REVISIONS 1
 #define RECOMP_LAUNCHER_MAX_BINDINGS 24
 #define RECOMP_LAUNCHER_MAX_ASSIST_BINDINGS 8
 

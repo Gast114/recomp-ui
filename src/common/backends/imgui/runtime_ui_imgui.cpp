@@ -118,12 +118,15 @@ void draw_items(RecompRuntimeUi *ui, const LauncherTheme &theme,
         ImGui::PushID(static_cast<int>(index));
         if (!enabled) ImGui::BeginDisabled();
         const ImVec2 start = ImGui::GetCursorScreenPos();
-        const float row_h = item->description && item->description[0]
-                                ? theme.row_height + theme.spacing_sm
-                                : theme.row_height;
+        const float row_width=ImGui::GetContentRegionAvail().x;
+        const float description_width=std::max(1.0f,row_width-theme.spacing_md*2);
+        const float description_h=item->description && item->description[0]
+            ? ImGui::CalcTextSize(item->description,nullptr,false,description_width).y : 0.0f;
+        const float row_h=std::max(theme.row_height,ImGui::GetTextLineHeight()+
+            theme.spacing_sm*2+(description_h?description_h+theme.spacing_sm:0));
         const float step_button_w =
-            touch_friendly ? std::max(76.0f, row_h * 0.90f) : 38.0f;
-        const float step_gap = touch_friendly ? 12.0f : 6.0f;
+            touch_friendly ? std::max(76.0f, row_h * 0.90f) : 38.0f * std::max(1.0f, ImGui::GetFontSize()/18.0f);
+        const float step_gap = touch_friendly ? 12.0f : 6.0f * std::max(1.0f, ImGui::GetFontSize()/18.0f);
         const float step_controls_w =
             item->type == RECOMP_RUNTIME_UI_INT
                 ? step_button_w * 2.0f + step_gap + theme.spacing_sm
@@ -168,21 +171,22 @@ void draw_items(RecompRuntimeUi *ui, const LauncherTheme &theme,
                           value);
         }
         if (item->description && item->description[0]) {
-            draw->AddText(ImVec2(start.x + theme.spacing_md,
+            draw->AddText(nullptr,0.0f,ImVec2(start.x + theme.spacing_md,
                                 start.y + theme.spacing_sm +
-                                    ImGui::GetTextLineHeight() + 2.0f),
-                          u32(theme.text_muted), item->description);
+                                    ImGui::GetTextLineHeight() + theme.spacing_sm),
+                          u32(theme.text_muted), item->description,nullptr,description_width);
         }
         if (editing_this && enabled) {
             const float field_w = touch_friendly
                 ? std::clamp((end.x - start.x) * 0.42f, 240.0f, 520.0f)
-                : 200.0f;
+                : 200.0f * std::max(1.0f, ImGui::GetFontSize()/18.0f);
             const float field_h = touch_friendly
                 ? std::max(ImGui::GetFrameHeight(), row_h * 0.72f)
                 : ImGui::GetFrameHeight();
             ImGui::SetCursorScreenPos(
                 ImVec2(end.x - theme.spacing_md - field_w,
-                       start.y + (row_h - field_h) * 0.5f));
+                       start.y + theme.spacing_sm +
+                           (ImGui::GetTextLineHeight() - field_h) * 0.5f));
             ImGui::SetNextItemWidth(field_w);
             // Nothing is active on the first frame of an edit, which is exactly
             // when focus should land in the field.
@@ -211,7 +215,8 @@ void draw_items(RecompRuntimeUi *ui, const LauncherTheme &theme,
             ImGui::SetCursorScreenPos(
                 ImVec2(end.x - theme.spacing_sm -
                            step_button_w * 2.0f - step_gap,
-                       start.y + (row_h - button_h) * 0.5f));
+                       start.y + theme.spacing_sm +
+                           (ImGui::GetTextLineHeight() - button_h) * 0.5f));
             if (ImGui::Button("-", ImVec2(step_button_w, button_h))) {
                 ui->row_index = index;
                 ui->in_section = 1;
@@ -331,8 +336,9 @@ extern "C" void recomp_runtime_ui_render_imgui(RecompRuntimeUi *ui) {
     const float touch_row_height =
         std::clamp(short_axis * 0.085f, 92.0f, 124.0f);
     const float metric_scale =
-        touch_friendly ? touch_row_height / theme.row_height : 1.0f;
-    if (touch_friendly) {
+        touch_friendly ? touch_row_height / theme.row_height
+                       : std::max(1.0f, ImGui::GetFontSize()/theme.font_body);
+    if (metric_scale != 1.0f) {
         theme.row_height *= metric_scale;
         theme.spacing_sm *= metric_scale;
         theme.spacing_md *= metric_scale;
@@ -342,16 +348,16 @@ extern "C" void recomp_runtime_ui_render_imgui(RecompRuntimeUi *ui) {
     }
     const float margin = touch_friendly
         ? std::max(20.0f, short_axis * 0.025f)
-        : 24.0f;
-    const float max_width = touch_friendly ? area.x : 780.0f;
-    const float max_height = touch_friendly ? area.y : 680.0f;
+        : 16.0f * metric_scale;
+    const float max_width = touch_friendly ? area.x : 1120.0f * metric_scale;
+    const float max_height = touch_friendly ? area.y : 850.0f * metric_scale;
     const float width = area.x - margin * 2.0f < max_width
                             ? area.x - margin * 2.0f
                             : max_width;
     const float height = area.y - margin * 2.0f < max_height
                              ? area.y - margin * 2.0f
                              : max_height;
-    const bool wide = width >= (touch_friendly ? 900.0f : 640.0f);
+    const bool wide = width >= (touch_friendly ? 900.0f : 980.0f * metric_scale);
     ImGui::SetNextWindowPos(ImVec2(origin.x+area.x * 0.5f, origin.y+area.y * 0.5f),
                             ImGuiCond_Always, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(width, height), ImGuiCond_Always);
@@ -382,10 +388,11 @@ extern "C" void recomp_runtime_ui_render_imgui(RecompRuntimeUi *ui) {
         ImGui::TextUnformatted(ui->config.title ? ui->config.title : "Settings");
         ImGui::PopStyleColor();
         if (ui->config.subtitle && ui->config.subtitle[0]) {
-            ImGui::SameLine();
             const float subtitle_w = ImGui::CalcTextSize(ui->config.subtitle).x;
-            ImGui::SetCursorPosX(ImGui::GetWindowWidth() -
-                                 ImGui::GetStyle().WindowPadding.x - subtitle_w);
+            if (ImGui::GetContentRegionAvail().x > subtitle_w + ImGui::CalcTextSize(ui->config.title ? ui->config.title : "Settings").x + theme.spacing_lg) {
+                ImGui::SameLine();
+                ImGui::SetCursorPosX(ImGui::GetWindowWidth() - ImGui::GetStyle().WindowPadding.x - subtitle_w);
+            }
             ImGui::TextDisabled("%s", ui->config.subtitle);
         }
         ImGui::Separator();
@@ -400,7 +407,7 @@ extern "C" void recomp_runtime_ui_render_imgui(RecompRuntimeUi *ui) {
         if (wide) {
             const float sidebar_w = touch_friendly
                 ? std::clamp(width * 0.20f, 280.0f, 520.0f)
-                : 190.0f;
+                : 230.0f * metric_scale;
             ImGui::BeginChild("##sections", ImVec2(sidebar_w, content_h), true);
             draw_sections(ui, theme, false);
             ImGui::EndChild();
@@ -444,9 +451,7 @@ extern "C" void recomp_runtime_ui_render_imgui(RecompRuntimeUi *ui) {
                                      ? ui->config.accept_label : "Select";
             const char *back = ui->config.back_label
                                    ? ui->config.back_label : "Back";
-            ImGui::TextDisabled(
-                "%s  Select    %s  Back    D-pad / Arrows  Navigate",
-                accept, back);
+            ImGui::TextDisabled("%s: Select   %s: Back", accept, back);
         }
         if (ui->status_frames) {
             ImGui::SameLine();
